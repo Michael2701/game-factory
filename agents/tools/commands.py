@@ -31,6 +31,7 @@ def run_command(
     timeout: float = 300,
     root: Path = PROJECT_ROOT,
     max_output_chars: int = MAX_OUTPUT_CHARS,
+    extra_env: dict[str, str] | None = None,
 ) -> CommandResult:
     """Run an allowlisted command. Raises SafetyError before running anything unsafe.
 
@@ -47,7 +48,7 @@ def run_command(
     start = time.monotonic()
     try:
         proc = subprocess.run(argv, cwd=cwd_path, capture_output=True, text=True,
-                              timeout=timeout, env=safe_env(), shell=False)
+                              timeout=timeout, env={**safe_env(), **(extra_env or {})}, shell=False)
     except subprocess.TimeoutExpired as exc:
         out = exc.stdout.decode() if isinstance(exc.stdout, bytes) else exc.stdout or ""
         err = exc.stderr.decode() if isinstance(exc.stderr, bytes) else exc.stderr or ""

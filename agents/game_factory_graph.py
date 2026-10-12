@@ -48,6 +48,7 @@ if __name__ == "__main__":
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 
 from agents.generators.phaser_template import DEFAULT_TEMPLATE  # noqa: E402
+from agents.llm import make_llm, model_name  # noqa: E402
 from agents.nodes.applier import (  # noqa: E402
     TARGET_REFUSED,
     apply_fix_node,
@@ -56,7 +57,7 @@ from agents.nodes.applier import (  # noqa: E402
     default_target,
 )
 from agents.nodes.coder import coder_dry_run_node  # noqa: E402
-from agents.nodes.fixer import fixer_node  # noqa: E402
+from agents.nodes.fixer import failure_signature, fixer_node  # noqa: E402
 from agents.nodes.human_gate import GATE_STATUSES, format_gate, human_gate_node  # noqa: E402
 from agents.nodes.planner import planner_node  # noqa: E402
 from agents.nodes.reviewer import reviewer_node  # noqa: E402
@@ -96,6 +97,10 @@ def _short(text: str | None) -> str:
 def _test_step(state: GameFactoryState, root: Path) -> dict:
     update = test_runner_node(state, root=root)
     result = update["test_result"]
+    records = state.fix_records
+    if (records and records[-1].attempt == state.fix_attempts and result.status == "failed"
+            and failure_signature(result) == records[-1].signature):  # the last fix changed nothing (M21)
+        update = {**update, "fix_records": [*records[:-1], records[-1].model_copy(update={"no_effect": True})]}
     return _record(state, update, LoopStep(step="test", attempt=state.fix_attempts, status=result.status,
                                            summary=result.summary))
 
@@ -342,6 +347,8 @@ def main(argv: list[str], llm=None, root: Path = PROJECT_ROOT) -> int:
                         help="--apply, then test and fix in a loop until tests pass or attempts run out")
     parser.add_argument("--max-fix-attempts", type=int, help="fix loop budget (default 5); requires --fix-loop")
     parser.add_argument("--target-dir", help="apply target (default generated/<slug>); requires --apply")
+    parser.add_argument("--model", help="Ollama model for every LLM node (default: $GAME_FACTORY_MODEL or "
+                                        "qwen2.5-coder:14b)")
     args = parser.parse_args(argv[1:])
     args.apply = args.apply or args.fix_loop
     if args.target_dir and not args.apply:
@@ -359,6 +366,10 @@ def main(argv: list[str], llm=None, root: Path = PROJECT_ROOT) -> int:
             print(f"error: {TARGET_REFUSED}: {exc}\nnothing was run or written")
             return 2
 
+    if llm is None and args.model:
+        llm = make_llm(args.model)
+    if not args.json:
+        print(f"model: {model_name(args.model)}" + (" (injected)" if llm is not None and not args.model else ""))
     before = file_hashes(root)
     state = run(args.idea, llm=llm, apply=args.apply, target_dir=args.target_dir, root=root,
                 fix_loop=args.fix_loop, max_fix_attempts=max_fix_attempts)
@@ -386,7 +397,8 @@ def main(argv: list[str], llm=None, root: Path = PROJECT_ROOT) -> int:
     if args.fix_loop:
         return 0 if gate_passed(state) else 1
     if args.apply:
-        return 0 if state.status == FactoryStatus.CHANGES_APPLIED and sorted(inside) == sorted(state.changed_files) else 1
+        written = sorted(p for p in inside if "/.factory/" not in p)  # .factory/: manifest + gate state (M18/M21)
+        return 0 if state.status == FactoryStatus.CHANGES_APPLIED and written == sorted(state.changed_files) else 1
     return 0 if state.status == FactoryStatus.CHANGES_PROPOSED else 1
 
 

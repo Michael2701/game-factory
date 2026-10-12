@@ -233,7 +233,7 @@ class FixLoopTest(TempRoot):
         """A fix that does not fix: exactly max attempts, then tests_failed. 8 rounds fit the recursion limit."""
         self.write_case("missing-file")
         broken = CASES["missing-file"]().files["src/main.ts"]
-        replies = [reply(("src/main.ts", "update", broken + f"// attempt {i}\n")) for i in range(1, 9)]
+        replies = [reply(("src/main.ts", "update", broken + f"const attempt{i} = {i};\n")) for i in range(1, 9)]
         llm = FakeLLM(*replies, REJECT_BUILD)
         state, checks = self.loop(llm, max_fix_attempts=8)
         self.assertEqual(state.status, FactoryStatus.NEEDS_HUMAN_REVIEW)
@@ -320,11 +320,11 @@ class FixLoopCliTest(TempRoot):
         """idea -> ... -> apply_changes -> test (fails) -> fixer -> apply_fix -> test (passes)."""
         def checks(project_dir, steps=test_runner.STEPS, root=None):
             main = (Path(root) / project_dir / "src/main.ts").read_text()
-            if "// fixed" in main:
+            if "export const fixed = true;" in main:
                 return TestResult(status="passed", summary="tests 3/3 passed")
             return CASES["missing-file"]().test_result
 
-        fixed = reply(("src/main.ts", "update", MAIN_V2 + "// fixed\n"))
+        fixed = reply(("src/main.ts", "update", MAIN_V2 + "export const fixed = true;\n"))
         with mock.patch.object(test_runner, "run_project_checks", checks):
             code, out = run_main(["--fix-loop"], FakeLLM(*ALL_REPLIES, fixed, APPROVE), root=self.root)
         self.assertEqual(code, 0, out)
@@ -333,7 +333,7 @@ class FixLoopCliTest(TempRoot):
                        "scripts/decide.py --project-dir generated/block-dodger approve",
                        "files changed outside it: 0"]:
             self.assertIn(needle, out)
-        self.assertTrue((self.root / "generated/block-dodger/src/main.ts").read_text().endswith("// fixed\n"))
+        self.assertTrue((self.root / "generated/block-dodger/src/main.ts").read_text().endswith("export const fixed = true;\n"))
         self.assertTrue((self.root / "generated/block-dodger/.factory/state.json").is_file())
 
     def test_main_fix_loop_exhausted_exit_1(self):

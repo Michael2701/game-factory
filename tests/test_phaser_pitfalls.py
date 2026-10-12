@@ -1,6 +1,6 @@
 """M20 Phaser 3 pitfalls found in real generated games, checked deterministically.
 
-Coder and fixer reject Phaser 2 key events (the player could not move in every M19/M20 run)
+Coder and fixer reject pre-3.16 key event names (the player could not move in every M19/M20 run)
 and sprites with textures that are never loaded; the fixer sees its earlier attempts.
 """
 
@@ -46,7 +46,7 @@ class PhaserProblemsTest(unittest.TestCase):
                      "this.input.on('keydown', f);"]:
             with self.subTest(line=line):
                 errors = problems(line)
-                self.assertTrue(any("Phaser 2 key events" in e for e in errors), errors)
+                self.assertTrue(any("never fire in Phaser 3.90" in e for e in errors), errors)
 
     def test_textures_must_be_loaded_or_generated(self):
         use = "this.player = this.physics.add.sprite(240, 600, 'player');"
@@ -58,13 +58,14 @@ class PhaserProblemsTest(unittest.TestCase):
         task = sample_template_task_plan().tasks[0]
         base = instantiate("block-dodger", "Block Dodger")
         changes = FileChangeSet(changes=[
-            FileChange(path="src/scenes/StartScene.ts", operation="update", content="x\n", reason="r"),
+            FileChange(path="src/scenes/StartScene.ts", operation="update", content="this.input.once('pointerdown', f);\n",
+                       reason="r"),
             FileChange(path="src/scenes/GameScene.ts", operation="update",
                        content="this.input.on('keydown_LEFT', f);\n", reason="r"),
             FileChange(path="src/scenes/GameOverScene.ts", operation="create", content="x\n", reason="r")])
         errors = check_changes(changes, task, base)
         self.assertEqual(len(errors), 1, errors)
-        self.assertIn("Phaser 2 key events", errors[0])
+        self.assertIn("never fire in Phaser 3.90", errors[0])
 
     def test_fixer_rejects_only_what_it_adds(self):
         old = "this.input.on('keydown_LEFT', f);\nconst a = 1;\n"  # existing bug: not the fixer's fault
@@ -74,7 +75,7 @@ class PhaserProblemsTest(unittest.TestCase):
         self.assertEqual(check_fix(keeps, relevant, []), [])
         adds = FileChangeSet(changes=[FileChange(path="src/scenes/GameScene.ts", operation="update",
                                                  content=old + "this.input.on('keyup_LEFT', g);\n", reason="r")])
-        self.assertTrue(any("Phaser 2 key events" in e for e in check_fix(adds, relevant, [])))
+        self.assertTrue(any("never fire in Phaser 3.90" in e for e in check_fix(adds, relevant, [])))
 
     def test_prompts_carry_the_notes(self):
         self.assertIn("createCursorKeys()", load_prompt("coder"))

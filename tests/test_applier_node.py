@@ -1,4 +1,5 @@
 import json
+import json
 import sys
 import tempfile
 import unittest
@@ -84,11 +85,15 @@ class ApplyNodeTest(TempRootTest):
         self.assertEqual(out["status"], FactoryStatus.CHANGES_APPLIED, out.get("error"))
         target = self.root / "generated/block-dodger"
         self.assertEqual(out["target_dir"], "generated/block-dodger")
-        self.assertEqual(tree(target), ["package.json", "playwright.config.ts", "src/main.ts",
-                                        "src/scenes/GameScene.ts", "tests/game.spec.ts"])
+        self.assertEqual(tree(target), [".factory/manifest.json", "package.json", "playwright.config.ts",
+                                        "src/main.ts", "src/scenes/GameScene.ts", "tests/game.spec.ts"])
         self.assertEqual((target / "src/main.ts").read_text(), "v2\n")
-        self.assertEqual(sorted(out["changed_files"]), sorted(f"generated/block-dodger/{p}" for p in tree(target)))
-        self.assertEqual(tree(self.root), sorted(out["changed_files"]))  # nothing else written
+        sources = [p for p in tree(target) if not p.startswith(".factory/")]
+        self.assertEqual(sorted(out["changed_files"]), sorted(f"generated/block-dodger/{p}" for p in sources))
+        self.assertEqual(tree(self.root), sorted([*out["changed_files"],  # nothing else written
+                                                  "generated/block-dodger/.factory/manifest.json"]))
+        manifest = json.loads((target / ".factory/manifest.json").read_text())
+        self.assertEqual((manifest["written_by"], sorted(manifest["files"])), ("apply_changes", sources))
 
     def test_explicit_target(self):
         out = apply_node(make_state(target_dir="games/dodger-v1"), root=self.root)

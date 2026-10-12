@@ -38,6 +38,7 @@ from agents.game_factory_graph import (  # noqa: E402
     gate_passed,
     run_fix_loop,
 )
+from agents.llm import make_llm, model_name  # noqa: E402
 from agents.nodes.applier import check_fix_target, check_target  # noqa: E402
 from agents.nodes.human_gate import GATE_STATUSES, format_gate  # noqa: E402
 from agents.schemas import FactoryStatus, FileChange, GameFactoryState  # noqa: E402
@@ -69,6 +70,7 @@ def main(argv: list[str], llm=None, root: Path = ROOT) -> int:
     parser.add_argument("--target-dir", help="where to write --case (default generated/fix-demo-<case>)")
     parser.add_argument("--max-fix-attempts", type=int, default=5)
     parser.add_argument("--json", action="store_true", help="print the final GameFactoryState as JSON")
+    parser.add_argument("--model", help="Ollama model (default: $GAME_FACTORY_MODEL or qwen2.5-coder:14b)")
     args = parser.parse_args(argv[1:])
     if args.target_dir and args.project_dir:
         parser.error("--target-dir is for --case; use --project-dir alone for an existing project")
@@ -109,6 +111,10 @@ def main(argv: list[str], llm=None, root: Path = ROOT) -> int:
         max_fix_attempts=args.max_fix_attempts,
         status=FactoryStatus.CHANGES_APPLIED if case else FactoryStatus.TESTING,
     )
+    if llm is None and args.model:
+        llm = make_llm(args.model)
+    if not args.json:
+        print(f"model: {model_name(args.model)}")
     start = time.monotonic()
     state = run_fix_loop(state, llm=llm, root=root)
     elapsed = time.monotonic() - start

@@ -68,11 +68,24 @@ def normalize_test_code(code: str) -> tuple[str, list[str]]:
     return "".join(pieces), notes
 
 
-def normalize_tests(changes: FileChangeSet) -> FileChangeSet:
+FIXTURES_FILE = "tests/fixtures.ts"  # template (M21): browser errors fail the test
+PLAYWRIGHT_IMPORT = re.compile(r"""(\bfrom\s+)(['"])@playwright/test\2""")
+
+
+def test_module(project_files: dict[str, str]) -> str:
+    """Module the specs must import test/expect from: the template's fixtures when present."""
+    return "./fixtures" if FIXTURES_FILE in project_files else "@playwright/test"
+
+
+def normalize_tests(changes: FileChangeSet, module: str = "@playwright/test") -> FileChangeSet:
     out = []
     for change in changes.changes:
         if change.path == TEST_FILE and change.content:
             content, notes = normalize_test_code(change.content)
+            if module != "@playwright/test":
+                content, count = PLAYWRIGHT_IMPORT.subn(lambda m: f"{m.group(1)}'{module}'", content)
+                if count:
+                    notes.append(f"imports test/expect from '{module}' (browser errors fail the test)")
             if notes:
                 change = change.model_copy(update={"content": content,
                                                    "reason": f"{change.reason} (normalized: {'; '.join(notes)})"})
@@ -125,11 +138,12 @@ def check_tests(changes: FileChangeSet, spec: GameSpec, project_files: dict[str,
     code = test.content or ""
     where = TEST_FILE
 
+    required = test_module(project_files)
     modules = {a or b for a, b in IMPORT_FROM.findall(code)}
-    if "@playwright/test" not in modules:
-        errors.append(f"{where}: must import {{ test, expect }} from '@playwright/test'")
-    for module in sorted(modules - {"@playwright/test"}):
-        errors.append(f"{where}: import from '{module}' is not allowed; only '@playwright/test'")
+    if required not in modules:
+        errors.append(f"{where}: must import {{ test, expect }} from '{required}'")
+    for module in sorted(modules - {required}):
+        errors.append(f"{where}: import from '{module}' is not allowed; only '{required}'")
     for token, why in FORBIDDEN.items():
         if token in code:
             errors.append(f"{where}: '{token}' is not allowed ({why})")
@@ -161,7 +175,8 @@ def check_tests(changes: FileChangeSet, spec: GameSpec, project_files: dict[str,
     hook_files = {p: c for p, c in project_files.items()
                   if not p.startswith("tests/") and ("__TEST_API__" in c or "__GAME_STATE__" in c)}
     if hook_files:
-        defined = {w for content in hook_files.values() for w in WORD.findall(content)}
+        from agents.nodes.coder import hook_properties  # M21: defined properties, not any word in the file
+        defined = set().union(*(hook_properties(content) for content in hook_files.values()))
         used = sorted({f"__{obj}__.{name}" for obj, name in HOOK_USE.findall(code) if name not in defined})
         if used:
             # The repair call sees only its own output and these errors, so show what IS available.
@@ -179,7 +194,7 @@ def write_tests(spec: GameSpec, project_files: dict[str, str] | None = None, llm
     prompt = render_prompt("test_writer", game_spec=spec, project_files=format_files(project_files), schema=schema)
     return invoke_structured(llm or make_llm(), NODE, prompt, FileChangeSet, schema,
                              check=lambda changes: check_tests(changes, spec, project_files),
-                             normalize=normalize_tests)
+                             normalize=lambda changes: normalize_tests(changes, test_module(project_files)))
 
 
 def test_writer_dry_run_node(state: GameFactoryState, llm=None) -> dict:

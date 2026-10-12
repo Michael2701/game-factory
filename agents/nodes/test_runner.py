@@ -13,11 +13,14 @@ from pathlib import Path
 
 from agents.schemas import CommandResult, FactoryStatus, GameFactoryState, TestFailure, TestResult
 from agents.tools.commands import MAX_OUTPUT_CHARS, run_command, tail_output
+from agents.tools.sourcemap import map_frames
 from agents.tools.safety import PROJECT_ROOT, SafetyError, ensure_allowed_path
 
 STEPS = ("install", "build", "test")
 # The JSON report grows ~5 KB per failing test; the 20k default tail cut it (found in M19, 9 tests = 46 KB).
 REPORT_MAX_CHARS = 5_000_000
+# M21: the test build keeps names + source maps (template vite.config.ts); `npm run build` alone stays minified.
+DEBUG_BUILD_ENV = {"GAME_FACTORY_DEBUG_BUILD": "1"}
 COMMANDS = {
     "install": ("npm install", 600),
     "build": ("npm run build", 300),
@@ -103,7 +106,9 @@ def run_project_checks(project_dir: str, steps: tuple[str, ...] = STEPS, root: P
         command, timeout = COMMANDS[step]
         try:
             limit = REPORT_MAX_CHARS if step == "test" else MAX_OUTPUT_CHARS
-            result = run_command(command, project_dir, timeout=timeout, root=root, max_output_chars=limit)
+            env = DEBUG_BUILD_ENV if step == "build" else None
+            result = run_command(command, project_dir, timeout=timeout, root=root, max_output_chars=limit,
+                                 extra_env=env)
         except SafetyError as exc:
             notes.append(f"{step} rejected")
             return TestResult(status="error", command_results=results,
@@ -126,6 +131,8 @@ def run_project_checks(project_dir: str, steps: tuple[str, ...] = STEPS, root: P
                 return TestResult(status="failed", command_results=results, summary=" · ".join(notes),
                                   failures=[TestFailure(name=command, message=_tail(result))])
             total, failures = parsed
+            # browser stack frames in the bundle -> src/… positions (best effort, M21)
+            failures = [f.model_copy(update={"message": map_frames(f.message, project)}) for f in failures]
             notes.append(f"tests {total - len([f for f in failures if f.name != 'playwright'])}/{total} passed")
             if failures or not result.ok:
                 failures = failures or [TestFailure(name=command, message=_tail(result))]

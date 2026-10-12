@@ -6,8 +6,8 @@ The product is the agent system; games (e.g. Block Dodger) are only validation o
 ## Current status
 
 - **Done:** M1 Skeleton · M2 Schemas · M3 Prompts · M4 Planner · M5 Task Decomposer · M6 Safe Tools · M7 Graph Skeleton · M8 Coder Dry Run · M9 Applier · M10 Minimal Project · M11 Test Writer · M12 Test Runner · M13 End-to-End Dry Run · M14 Apply Flow · M15 Fixer Node · M16 Fix Loop Graph · M17 Reviewer Node · M18 Human Approval Gate · M19 Phaser Template
-- **Current milestone:** M20 — First Real Generated Game Validation — **complete with a partial result, awaiting user review** (see [docs/milestones/M20-first-generated-game.md](docs/milestones/M20-first-generated-game.md))
-- **Next milestone:** none (M20 is the last roadmap milestone).
+- **Roadmap M1–M20 done.** After the roadmap: **M21 — Playable generated game — complete** (r8 on qwen2.5-coder:32b meets all technical criteria, see [docs/milestones/M21-playable-game.md](docs/milestones/M21-playable-game.md)).
+- **Current milestone:** M22 — Quality bar (plan approved by the user; in progress).
 - **Git:** pushed to https://github.com/Michael2701/game-factory (`main`, like Agentic_SRE_Testbed); `generated/` is git-ignored (run outputs). Commit/push only when the user says so.
 
 ## Hard rules (always apply)
@@ -53,6 +53,7 @@ The product is the agent system; games (e.g. Block Dodger) are only validation o
 | [docs/milestones/M17-reviewer.md](docs/milestones/M17-reviewer.md) | M17 scope, verification log, **real reviews (fixture, block-dodger, loop + review)**, finding: qwen copies the prompt example |
 | [docs/milestones/M18-human-gate.md](docs/milestones/M18-human-gate.md) | M18 scope, verification log, **real loop stopping at the gate + decide.py**, why END + state file instead of `interrupt()` |
 | [docs/milestones/M19-phaser-template.md](docs/milestones/M19-phaser-template.md) | M19 scope, template files, verification log, **real dry run on top of the template** |
+| [docs/milestones/M21-playable-game.md](docs/milestones/M21-playable-game.md) | M21: acceptance spec with real input, browser-error fixture + source maps, fixer anti-repeat, model config, runs r7/r7b (14b) and r8 (32b, 11/11) |
 | [docs/milestones/M20-first-generated-game.md](docs/milestones/M20-first-generated-game.md) | M20 runs r1–r6 (Block Dodger through the full pipeline), agent-system fixes per round, limitations, **next steps** |
 
 ## Quick commands
@@ -78,5 +79,7 @@ python agents/game_factory_graph.py ["idea"] --fix-loop [--max-fix-attempts 5]  
 python scripts/run_fix_loop.py [--case two-bugs] [--project-dir generated/x]  # fix loop (+ review + human gate) on a broken fixture (→ generated/fix-demo-<case>) or existing project
 python scripts/run_reviewer.py --project-dir generated/x [--spec spec.json] [--json]  # test + review an existing project → ReviewResult, no writes (Ollama + npm)
 python scripts/new_from_template.py --target generated/x [--check]  # Phaser template → new project (+ install, build, 3 smoke tests)
+python scripts/audit_generated.py --project-dir generated/x   # M21: sources match the agent-write manifest (no manual edits)
+GAME_FACTORY_MODEL=qwen2.5-coder:32b python agents/game_factory_graph.py --fix-loop   # or --model …
 python scripts/decide.py --project-dir generated/x --show | approve | reject | changes [--note "…"]  # human decision at the gate (no LLM)
 ```

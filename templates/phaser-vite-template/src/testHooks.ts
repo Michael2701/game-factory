@@ -13,6 +13,10 @@ export function setupTestHooks(game: Phaser.Game) {
     get result() {
       return gameScene()?.result ?? null;
     },
+    // the player's x position (the template has no player yet; the acceptance test moves it with arrow keys)
+    get playerX() {
+      return (gameScene() as any)?.player?.x ?? null;
+    },
   };
   (window as any).__TEST_API__ = {
     startGame() {

@@ -93,7 +93,8 @@ class OptionalPathsTest(unittest.TestCase):
         return check_changes(FileChangeSet.model_validate_json(raw), T4, self.EXISTING, ["src/main.ts"])
 
     def scenes(self):
-        return [change(p) for p in T4.target_files]
+        start = "this.input.once('pointerdown', () => this.scene.start('GameScene'));\n"  # M21 click-to-start
+        return [change(p, start) if p.endswith("StartScene.ts") else change(p) for p in T4.target_files]
 
     def test_update_allowed_but_not_required(self):
         self.assertEqual(self.errors(reply(*self.scenes())), [])
@@ -121,10 +122,10 @@ class HookContractTest(unittest.TestCase):
         partial = "(window as any).__TEST_API__ = { skipTime(s: number) {} };"
         errors = check_changes(FileChangeSet.model_validate_json(reply(change("src/testHooks.ts", partial))),
                                self.T5, {})
-        self.assertTrue(any("missing ['__GAME_STATE__', 'scene', 'result', 'startGame']" in e for e in errors), errors)
+        self.assertTrue(any("missing ['__GAME_STATE__', 'scene', 'result', 'playerX', 'startGame']" in e for e in errors), errors)
 
     def test_contract_satisfied(self):
-        full = ("(window as any).__GAME_STATE__ = { scene: 'GameScene', result: null };\n"
+        full = ("(window as any).__GAME_STATE__ = { scene: 'GameScene', result: null, playerX: 240 };\n"
                 "(window as any).__TEST_API__ = { startGame() {}, skipTime(seconds: number) {} };")
         raw = reply(change("src/testHooks.ts", full))
         self.assertEqual(check_changes(FileChangeSet.model_validate_json(raw), self.T5, {}), [])

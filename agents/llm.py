@@ -4,6 +4,7 @@ Reference: docs/NODES.md.
 """
 
 import json
+import os
 import re
 from collections.abc import Callable
 from typing import TypeVar
@@ -13,6 +14,7 @@ from pydantic import BaseModel, ValidationError
 from agents.schemas.node_error import NodeError
 
 MODEL = "qwen2.5-coder:14b"
+MODEL_ENV = "GAME_FACTORY_MODEL"  # M21: e.g. GAME_FACTORY_MODEL=qwen2.5-coder:32b
 TEMPERATURE = 0.2
 
 M = TypeVar("M", bound=BaseModel)
@@ -22,10 +24,15 @@ FENCED = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.S)
 INVALID_ESCAPE = re.compile(r'(?<!\\)((?:\\\\)*)\\([^"\\/bfnrtu])')
 
 
-def make_llm(model: str = MODEL, temperature: float = TEMPERATURE):
+def model_name(model: str | None = None) -> str:
+    """Explicit model, else $GAME_FACTORY_MODEL, else the default qwen2.5-coder:14b."""
+    return model or os.environ.get(MODEL_ENV) or MODEL
+
+
+def make_llm(model: str | None = None, temperature: float = TEMPERATURE):
     from langchain_ollama import ChatOllama
 
-    return ChatOllama(model=model, temperature=temperature)
+    return ChatOllama(model=model_name(model), temperature=temperature)
 
 
 def fix_invalid_escapes(text: str) -> str:

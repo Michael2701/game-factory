@@ -40,7 +40,8 @@ from scripts import new_from_template  # noqa: E402
 
 PINS = {"phaser": "3.90.0", "vite": "8.3.1", "typescript": "6.0.3", "@playwright/test": "1.62.0"}
 EXPECTED_FILES = ["index.html", "package.json", "playwright.config.ts", "src/main.ts", "src/scenes/GameScene.ts",
-                  "src/scenes/StartScene.ts", "src/testHooks.ts", "tests/game.spec.ts", "tsconfig.json"]
+                  "src/scenes/StartScene.ts", "src/testHooks.ts", "tests/fixtures.ts", "tests/game.spec.ts",
+                  "tsconfig.json", "vite.config.ts"]
 SPEC = sample_game_spec()
 
 
@@ -85,12 +86,12 @@ class TemplateFilesTest(unittest.TestCase):
 
     def test_old_tests_are_not_a_hook_source(self):
         """M19 real run: the template's smoke tests were counted as hook definitions for the test writer."""
-        files = {**self.files, "tests/game.spec.ts": self.files["tests/game.spec.ts"] + "// __GAME_STATE__.playerX\n"}
+        files = {**self.files, "tests/game.spec.ts": self.files["tests/game.spec.ts"] + "// __GAME_STATE__.lives\n"}
         tests = self.files["tests/game.spec.ts"].replace(
-            "(window as any).__GAME_STATE__.result)", "(window as any).__GAME_STATE__.playerX)")
+            "(window as any).__GAME_STATE__.result)", "(window as any).__GAME_STATE__.lives)")
         errors = check_tests(change_set(("tests/game.spec.ts", "update", tests)), SPEC, files)
         self.assertEqual(len(errors), 1, errors)
-        self.assertIn("['__GAME_STATE__.playerX'] are not defined by the project's test hooks (['src/testHooks.ts'])",
+        self.assertIn("['__GAME_STATE__.lives'] are not defined by the project's test hooks (['src/testHooks.ts'])",
                       errors[0])
 
     def test_guide_describes_every_file(self):
@@ -119,7 +120,8 @@ class LocksTest(unittest.TestCase):
     def test_coder_rejects_locked_files(self):
         task = sample_template_task_plan().tasks[0]
         base = instantiate("block-dodger", "Block Dodger")
-        bad = change_set(*[(p, "update", "x\n") for p in task.target_files[:2]],
+        bad = change_set(("src/scenes/StartScene.ts", "update", "this.input.once('pointerdown', f);\n"),
+                         ("src/scenes/GameScene.ts", "update", "x\n"),
                          ("src/scenes/GameOverScene.ts", "create", "export class GameOverScene {}\n"),
                          ("package.json", "update", '{"scripts": {"build": "vite build"}}'))
         errors = check_changes(bad, task, base, ["src/main.ts"], LOCKED_FILES)
@@ -156,7 +158,9 @@ class FinalProjectTest(unittest.TestCase):
             FileChange(path="src/scenes/GameScene.ts", operation="update", content="game\n", reason="r"),
             FileChange(path="src/scenes/GameOverScene.ts", operation="create", content="over\n", reason="r")])
         files = {c.path: c.content for c in final_changes(state)}
-        self.assertEqual(sorted(files), sorted([*EXPECTED_FILES, "src/scenes/GameOverScene.ts"]))
+        self.assertEqual(sorted(files), sorted([*EXPECTED_FILES, "src/scenes/GameOverScene.ts",
+                                                "tests/acceptance.spec.ts"]))  # M21: written by code from the spec
+        self.assertIn("page.keyboard.down('ArrowLeft')", files["tests/acceptance.spec.ts"])
         self.assertEqual(files["src/scenes/GameScene.ts"], "game\n")
         self.assertEqual(files["playwright.config.ts"], template_files()["playwright.config.ts"])
         scratch = state.model_copy(update={"template": None})

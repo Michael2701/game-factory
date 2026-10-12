@@ -32,7 +32,7 @@ MAIN_V2 = ("import * as Phaser from 'phaser';\nimport { StartScene } from './sce
            "import { setupTestHooks } from './testHooks';\n"
            "setupTestHooks(new Phaser.Game({ scene: [StartScene, GameScene, GameOverScene] }));\n")
 HOOKS = ("export function setupTestHooks(game: any) {\n"
-         "  (window as any).__GAME_STATE__ = { scene: 'StartScene', result: null };\n"
+         "  (window as any).__GAME_STATE__ = { scene: 'StartScene', result: null, playerX: 240 };\n"
          "  (window as any).__TEST_API__ = { startGame() {}, skipTime(seconds: number) {} };\n}\n")
 TESTS_TS = """import { test, expect } from '@playwright/test';
 test('a', async ({ page }) => { await page.goto('/'); await page.waitForFunction(() => (window as any).__GAME_STATE__); });
@@ -46,7 +46,7 @@ def changes(*items) -> str:
 
 
 CODER_REPLIES = [
-    changes(("src/scenes/StartScene.ts", "update", "export class StartScene {}\n"),          # T1 (+ main.ts)
+    changes(("src/scenes/StartScene.ts", "update", "export class StartScene { create() { this.input.once('pointerdown', f); } }\n"),          # T1 (+ main.ts)
             ("src/scenes/GameScene.ts", "update", "export class GameScene {}\n"),
             ("src/scenes/GameOverScene.ts", "create", "export class GameOverScene {}\n"),
             ("src/main.ts", "update", MAIN_V2)),
@@ -54,7 +54,8 @@ CODER_REPLIES = [
 ]
 TEST_REPLY = changes(("tests/game.spec.ts", "update", TESTS_TS))
 ALL_REPLIES = [SPEC_JSON, PLAN_JSON, *CODER_REPLIES, TEST_REPLY]
-PROJECT_FILES = sorted({*TEMPLATE, "src/scenes/GameOverScene.ts"})  # template + the one new scene
+# template + the one new scene + the factory-written acceptance test (M21); .factory/manifest.json is bookkeeping
+PROJECT_FILES = sorted({*TEMPLATE, "src/scenes/GameOverScene.ts", "tests/acceptance.spec.ts"})
 
 
 def run_main(argv, llm, root=None):
@@ -252,13 +253,15 @@ class ApplyFlowTest(unittest.TestCase):
         self.assertEqual(state.status, FactoryStatus.CHANGES_APPLIED, state.error)
         self.assertEqual(state.target_dir, "generated/block-dodger")
         target = self.root / "generated/block-dodger"
-        self.assertEqual(project_tree(target), PROJECT_FILES)  # template + agents' files, one write each
+        self.assertEqual([p for p in project_tree(target) if not p.startswith(".factory/")], PROJECT_FILES)
+        self.assertTrue((target / ".factory/manifest.json").is_file())
         self.assertEqual((target / "src/main.ts").read_text(), MAIN_V2)
         self.assertEqual((target / "playwright.config.ts").read_text(), TEMPLATE["playwright.config.ts"])
         self.assertIn('"name": "block-dodger"', (target / "package.json").read_text())
         self.assertIn("<title>Block Dodger</title>", (target / "index.html").read_text())
-        self.assertEqual((target / "tests/game.spec.ts").read_text(), TESTS_TS)
-        self.assertEqual(sorted(state.changed_files), [f"generated/block-dodger/{p}" for p in project_tree(target)])
+        self.assertEqual((target / "tests/game.spec.ts").read_text(),  # normalized: imports the fixtures (M21)
+                         TESTS_TS.replace("'@playwright/test'", "'./fixtures'"))
+        self.assertEqual(sorted(state.changed_files), [f"generated/block-dodger/{p}" for p in PROJECT_FILES])
 
     def test_run_without_apply_writes_nothing(self):
         before = file_hashes(self.root)
@@ -276,7 +279,7 @@ class ApplyFlowTest(unittest.TestCase):
         code, out = run_main(["--apply"], FakeLLM(*ALL_REPLIES), root=self.root)
         self.assertEqual(code, 0, out)
         for needle in ["=== APPLIED → generated/block-dodger ===", "WROTE  generated/block-dodger/src/main.ts",
-                       "changes_applied", f"files changed inside generated/block-dodger/: {len(PROJECT_FILES)}",
+                       "changes_applied", f"files changed inside generated/block-dodger/: {len(PROJECT_FILES) + 1}",
                        "files changed outside it: 0"]:
             self.assertIn(needle, out)
 

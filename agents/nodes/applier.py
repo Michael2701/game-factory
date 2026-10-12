@@ -11,14 +11,18 @@ fixer's `state.fix_changes` inside `state.target_dir` (below generated/ or games
 preview first, all-or-nothing. Reference: docs/NODES.md, docs/TOOLS.md.
 """
 
+import hashlib
+import json
 from pathlib import Path
 
 from pydantic import ValidationError
 
+from agents.generators.acceptance import ACCEPTANCE_FILE, acceptance_spec
 from agents.generators.phaser_template import project_base
 from agents.nodes.coder import merge_changes
 from agents.schemas import FactoryStatus, FileChange, GameFactoryState, NodeError
 from agents.tools.apply_changes import apply_changes
+from agents.tools.filesystem import read_project, write_file
 from agents.tools.safety import PROJECT_ROOT, SafetyError, ensure_writable
 
 NODE = "applier"
@@ -46,10 +50,26 @@ def check_target(target_dir: str | Path, root: Path = PROJECT_ROOT) -> str:
     return rel.as_posix()
 
 
+MANIFEST_FILE = ".factory/manifest.json"
+
+
+def source_hashes(target: str, root: Path = PROJECT_ROOT) -> dict[str, str]:
+    """sha256 of every source file of the project (read_project view: no node_modules/dist/.factory)."""
+    return {p: hashlib.sha256(c.encode()).hexdigest() for p, c in sorted(read_project(target, root).items())}
+
+
+def write_manifest(target: str, by: str, root: Path = PROJECT_ROOT) -> None:
+    """Record the project's sources right after an agent write (M21: proves no manual edits later)."""
+    data = {"written_by": by, "files": source_hashes(target, root)}
+    write_file(f"{target}/{MANIFEST_FILE}", json.dumps(data, indent=2) + "\n", root)
+
+
 def final_changes(state: GameFactoryState) -> list[FileChange]:
     """Merge the project base (template, M19), then all proposals (code, then tests) into one `create` per file."""
     base = project_base(state.template, state.game_spec.slug, state.game_spec.title) if state.game_spec else {}
     files = merge_changes(base, [*state.proposed_changes, *state.proposed_test_changes])
+    if state.template and state.game_spec:  # M21: locked, written by code from the GameSpec, never by the LLM
+        files[ACCEPTANCE_FILE] = acceptance_spec(state.game_spec, import_from="./fixtures")
     return [FileChange(path=path, operation="create", content=content, reason="final merged proposal")
             for path, content in files.items()]
 
@@ -77,6 +97,7 @@ def apply_node(state: GameFactoryState, root: Path = PROJECT_ROOT) -> dict:
     result = apply_changes(changes, target, apply=True, root=root)
     if not result.ok:
         return {"target_dir": target, "status": FactoryStatus.ERROR, "error": f"{NODE}: {result.summary()}"}
+    write_manifest(target, "apply_changes", root)
     return {"target_dir": target, "changed_files": result.changed_files,
             "status": FactoryStatus.CHANGES_APPLIED, "error": None}
 
@@ -120,4 +141,5 @@ def apply_fix_node(state: GameFactoryState, root: Path = PROJECT_ROOT) -> dict:
     if not result.ok:
         return error(result.summary())
     changed = list(dict.fromkeys([*state.changed_files, *result.changed_files]))
+    write_manifest(target, "apply_fix", root)
     return {"changed_files": changed, "fix_changes": [], "status": FactoryStatus.TESTING, "error": None}

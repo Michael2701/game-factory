@@ -295,7 +295,7 @@ class ScriptTest(unittest.TestCase):
             self.assertIn(needle, out)
 
     def test_implausible_fix(self):
-        wrong = reply(("src/main.ts", "update", BASE_FILES["src/main.ts"] + "// touched\n"))
+        wrong = reply(("src/main.ts", "update", BASE_FILES["src/main.ts"] + "export const touched = true;\n"))
         code, out = run_script(["--case", "phaser-default"], FakeLLM(wrong))
         self.assertEqual(code, 1)
         self.assertIn("plausible fix (culprit src/scenes/StartScene.ts fixed): NO", out)

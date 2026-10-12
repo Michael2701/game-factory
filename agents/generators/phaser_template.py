@@ -18,13 +18,14 @@ from agents.tools.safety import PROJECT_ROOT
 
 TEMPLATES_DIR = "templates"
 DEFAULT_TEMPLATE = "phaser-vite-template"
-LOCKED_FILES = ("package.json", "index.html", "tsconfig.json", "playwright.config.ts")
+LOCKED_FILES = ("package.json", "index.html", "tsconfig.json", "playwright.config.ts",
+                "vite.config.ts", "tests/fixtures.ts", "tests/acceptance.spec.ts")  # last three: M21
 TEMPLATE_ONLY = ("README.md",)  # documents the template; not copied into projects
 TEMPLATE_TITLE = "<title>Phaser Vite Template</title>"
 
 # Shown to the task decomposer (prompt variable `project_base`); every template file is described.
 TEMPLATE_GUIDE = """The project starts from the Phaser + Vite template. These files ALREADY EXIST:
-- package.json, index.html, tsconfig.json, playwright.config.ts: LOCKED (pinned versions, build and test config). Never put them in target_files.
+- package.json, index.html, tsconfig.json, playwright.config.ts, vite.config.ts, tests/fixtures.ts (browser errors fail tests) and tests/acceptance.spec.ts (written by the factory: real click + arrow keys): LOCKED. Never put them in target_files.
 - src/main.ts: boots Phaser with Arcade Physics enabled (this.physics works in every scene) and the scenes [StartScene, GameScene], and calls setupTestHooks(game). Scene tasks update it to register new scenes.
 - src/scenes/StartScene.ts and src/scenes/GameScene.ts: placeholder scenes. Plan tasks that update them with the game; create other scenes (e.g. src/scenes/GameOverScene.ts) next to them.
 - src/testHooks.ts: stub of the hook contract (window.__GAME_STATE__ scene/result, window.__TEST_API__ startGame()/skipTime()). The test_hooks task updates it.

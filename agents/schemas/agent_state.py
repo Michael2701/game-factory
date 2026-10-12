@@ -39,6 +39,16 @@ class LoopStep(StrictModel):
     files: list[str] = Field(default_factory=list)  # fix: proposed paths · apply_fix: written paths
 
 
+class FixRecord(StrictModel):
+    """One fixer proposal, remembered so the loop can refuse repeats (M21)."""
+
+    attempt: int = Field(ge=1)
+    fingerprint: str = Field(min_length=1)  # sha256 of the normalized change set (whitespace/comments ignored)
+    signature: str = ""  # normalized first failure the fix was meant to solve
+    lines: list[str] = Field(default_factory=list)  # normalized lines the fix added or removed
+    no_effect: bool = False  # applied, but the next test run failed with the same signature
+
+
 class HumanDecision(StrictModel):
     """Decision taken by a human at the approval gate (M18), recorded by scripts/decide.py."""
 
@@ -62,6 +72,7 @@ class GameFactoryState(StrictModel):
     review_result: ReviewResult | None = None
     human_decision: HumanDecision | None = None  # set by decide() after the human gate (M18)
     loop_history: list[LoopStep] = Field(default_factory=list)  # test / fix / apply_fix steps (M16)
+    fix_records: list[FixRecord] = Field(default_factory=list)  # fixer proposals, for anti-repeat (M21)
     fix_attempts: int = Field(default=0, ge=0)
     max_fix_attempts: int = Field(default=5, ge=0)
     status: FactoryStatus = FactoryStatus.NEW

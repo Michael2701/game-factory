@@ -27,11 +27,20 @@ NODE = "coder"
 CODER_KINDS = {"config", "code", "test_hooks", "tests"}
 
 # Minimum hook contract a test_hooks task must expose (tests rely on it; see prompts/coder.md).
-HOOK_CONTRACT = ("__GAME_STATE__", "__TEST_API__", "scene", "result", "startGame", "skipTime")
+HOOK_CONTRACT = ("__GAME_STATE__", "__TEST_API__", "scene", "result", "playerX", "startGame", "skipTime")
+
+START_SCENE = "src/scenes/StartScene.ts"
+# Names DEFINED in hook code: getters/methods `name(...) {` and properties `name:` (M21: a bare word such as
+# `gameScene()?.result` used to satisfy the contract although __GAME_STATE__ had no `result`).
+HOOK_PROPERTY = re.compile(r"\b(\w+)\s*(?:\([^)]*\)\s*(?::\s*[\w<>|' \[\]]+)?\s*\{|:)")
+
+
+def hook_properties(code: str) -> set[str]:
+    return set(HOOK_PROPERTY.findall(code))
 
 # Phaser 3.90's ESM build has no default export: `import Phaser from 'phaser'` breaks the build (M14).
 PHASER_DEFAULT_IMPORT = re.compile(r"""\bimport\s+Phaser\s*(?:,[^;]*?)?\s+from\s+['"]phaser['"]""")
-# Phaser 2 style key events never fire in Phaser 3: the player cannot move (M20 real runs).
+# Pre-3.16 key event names / listeners on the InputPlugin never fire in Phaser 3.90: nobody can move (M20 runs).
 PHASER2_KEY_EVENT = re.compile(r"""input\.on\(\s*['"]key(?:down|up)|['"]key(?:down|up)_[A-Z]""")
 TEXTURE_USE = re.compile(r"""\b(?:physics\.)?add\.(?:sprite|image)\(\s*[^,()]+,\s*[^,()]+,\s*['"]([\w-]+)['"]""")
 TEXTURE_DEF = re.compile(r"""\b(?:load\.(?:image|spritesheet|atlas|svg)|generateTexture|textures\.(?:create\w*|add\w*))"""
@@ -45,7 +54,8 @@ def phaser_problems(where: str, content: str, project_code: str) -> list[str]:
         errors.append(f"{where}: `import Phaser from 'phaser'` breaks the build (Phaser 3.90 has no default "
                       "export); use `import * as Phaser from 'phaser'`")
     if PHASER2_KEY_EVENT.search(content):
-        errors.append(f"{where}: Phaser 2 key events never fire in Phaser 3 (the player cannot move); use "
+        errors.append(f"{where}: old key event names ('keydown_LEFT', renamed in Phaser 3.16) or listeners on "
+                      "this.input instead of this.input.keyboard never fire in Phaser 3.90 (the player cannot move); use "
                       "`const cursors = this.input.keyboard!.createCursorKeys()` and read `cursors.left.isDown` in "
                       "update(), or `this.input.keyboard!.on('keydown-LEFT', ...)`")
     defined = set(TEXTURE_DEF.findall(project_code))
@@ -116,6 +126,9 @@ def check_changes(
             errors.append(f"{where}: content must be raw file text without markdown code fences")
         if change.path.endswith(".ts"):
             errors += phaser_problems(where, content, project_code)
+        if change.path == START_SCENE and "pointerdown" not in content:  # M21 acceptance: click to start
+            errors.append(f"{where}: the start screen must start the game on a click anywhere: keep "
+                          "this.input.once('pointerdown', () => this.scene.start('GameScene'))")
         if change.path.endswith(".json") and change.content is not None:
             try:
                 data = json.loads(change.content)
@@ -129,10 +142,12 @@ def check_changes(
 
     if task.kind == "test_hooks" and changes.changes:
         code = "\n".join(c.content or "" for c in changes.changes)
-        missing = [name for name in HOOK_CONTRACT if not re.search(rf"\b{re.escape(name)}\b", code)]
+        defined = hook_properties(code)
+        missing = [name for name in HOOK_CONTRACT
+                   if not (name in defined if not name.startswith("__") else re.search(rf"\b{name}\b", code))]
         if missing:
             errors.append(f"changes: test hooks must expose the hook contract; missing {missing} "
-                          "(__GAME_STATE__.scene/.result, __TEST_API__.startGame()/.skipTime(seconds))")
+                          "(__GAME_STATE__.scene/.result/.playerX, __TEST_API__.startGame()/.skipTime(seconds))")
     return errors
 
 

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 // Smoke tests of the template's hook contract; the test writer replaces them with game tests.
 test('game loads into the start scene', async ({ page }) => {

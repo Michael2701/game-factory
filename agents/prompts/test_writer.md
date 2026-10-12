@@ -19,7 +19,7 @@ Project files (paths, and content where relevant):
 - Write the tests to `tests/game.spec.ts` (required). You may also create `playwright.config.ts`, but only if it is not in the project files. Never touch other paths. Never use absolute paths, "~", or "..".
 - Use `operation: "create"` for files that are not in the project files and `"update"` (full new content) for files that are. Never use `"delete"`.
 - `content` is the raw file text. Never put markdown code fences (```) inside `content`.
-- Import only from '@playwright/test'. Tests are executed code: never import or require anything else (no fs, child_process, network libraries).
+- Import `{ test, expect }` only from './fixtures' when the project files contain tests/fixtures.ts (it makes browser errors fail the test), otherwise only from '@playwright/test'. Tests are executed code: never import or require anything else (no fs, child_process, network libraries).
 - Tests must be deterministic: read state only through `window.__GAME_STATE__` and drive the game through `window.__TEST_API__` or keyboard/mouse input. Never use `waitForTimeout`, `setTimeout`, `Math.random`, or sleeps.
 - Wait with `page.waitForFunction(() => (window as any).__GAME_STATE__...)` instead of fixed delays.
 - Load the game only with `page.goto('/')` (the base URL is configured elsewhere). No other URLs.

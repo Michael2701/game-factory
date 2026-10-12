@@ -41,6 +41,9 @@ The agents' **output target**: every generated project starts from this template
 | `src/scenes/GameScene.ts` | placeholder with `result` and `skipTime(seconds)` | update |
 | `src/testHooks.ts` | hook contract: `__GAME_STATE__.scene/.result`, `__TEST_API__.startGame()/.skipTime()` | update (test_hooks task) |
 | `tests/game.spec.ts` | 3 smoke tests of the contract | replaced by the test writer |
+| `tests/fixtures.ts` | M21: `pageerror` + `console.error` fail the test ("Browser errors") | **locked** |
+| `vite.config.ts` | M21: source maps + no minify only with `GAME_FACTORY_DEBUG_BUILD=1` (test runner) | **locked** |
+| `tests/acceptance.spec.ts` | M21: written by `agents/generators/acceptance.py` from the GameSpec at apply time (real click + arrow keys, screenshots) | **locked** |
 | `README.md` | template docs | not copied |
 
 API (`agents/generators/phaser_template.py`):
