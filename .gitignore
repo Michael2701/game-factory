@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+.idea/
+.lavish/
+dist/
+test-results/
+playwright-report/
+
+# Agent run outputs (generated games); reproducible, documented in docs/milestones
+generated/*
+!generated/.gitkeep
