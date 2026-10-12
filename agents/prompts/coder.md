@@ -42,11 +42,16 @@ Existing files (path and current content):
 - JSON files must be valid JSON. In `package.json`, `scripts.build` must be exactly "vite build" or "tsc && vite build" (other build scripts are rejected by the build tool).
 - Keep code small, readable and typed. Phaser 3 API only; no extra libraries beyond phaser, vite, typescript and @playwright/test.
 - Always import Phaser as `import * as Phaser from 'phaser';` — never `import Phaser from 'phaser'` (Phaser 3.90 has no default export; the build fails).
+- Phaser 3 facts (from real failures):
+  - Keyboard: `const cursors = this.input.keyboard!.createCursorKeys();` and check `cursors.left.isDown` / `cursors.right.isDown` in `update()`. Never `this.input.on('keydown_LEFT', ...)` (Phaser 2 names never fire).
+  - There are no image assets: draw objects with `this.add.rectangle(x, y, w, h, color)`, give them physics with `this.physics.add.existing(shape)`, and move them through the body: `(shape.body as Phaser.Physics.Arcade.Body).setVelocityY(200)`. Never use `add.sprite`/`physics.add.sprite` with a texture key that is not loaded.
+  - Iterate a group with `group.getChildren().forEach(...)`; collisions: `this.physics.add.overlap(player, blocks, () => ..., undefined, this)`.
+  - End the game with `this.scene.start('GameOverScene', { result })` so `__GAME_STATE__.scene` changes.
 - Existing files may be template placeholders (e.g. "Game goes here"): replace the placeholder parts with your task's implementation, keep what other code relies on (scene keys, `result`, `skipTime`, exported names).
 - Keep the game testable: game state must stay reachable through `window.__GAME_STATE__` and `window.__TEST_API__` when the task touches game logic.
 - For a `test_hooks` task, expose at least this hook contract (tests rely on it), plus every hook named in the GameSpec test_requirements:
   - `window.__GAME_STATE__`: `scene` (current scene key), `result` ('win' | 'lose' | null), and the game values the test_requirements mention;
-  - `window.__TEST_API__`: `startGame()` (go to the game scene), `skipTime(seconds)` (advance the game timer instantly), and the methods the test_requirements mention.
+  - `window.__TEST_API__`: `startGame()` (go to the game scene), `skipTime(seconds)` (advance the game timer instantly: DEcrease the remaining time by `seconds` and end the game right away when it reaches 0), and the methods the test_requirements mention.
   Make sure the hooks are actually installed when the game starts (wire them in src/main.ts if needed).
 - `reason` names the task id and what the change does.
 

@@ -6,7 +6,7 @@ The product is the agent system; games (e.g. Block Dodger) are only validation o
 ## Current status
 
 - **Done:** M1 Skeleton · M2 Schemas · M3 Prompts · M4 Planner · M5 Task Decomposer · M6 Safe Tools · M7 Graph Skeleton · M8 Coder Dry Run · M9 Applier · M10 Minimal Project · M11 Test Writer · M12 Test Runner · M13 End-to-End Dry Run · M14 Apply Flow · M15 Fixer Node · M16 Fix Loop Graph · M17 Reviewer Node · M18 Human Approval Gate · M19 Phaser Template
-- **Current milestone:** M20 — First Real Generated Game Validation — **in progress**
+- **Current milestone:** M20 — First Real Generated Game Validation — **complete with a partial result, awaiting user review** (see [docs/milestones/M20-first-generated-game.md](docs/milestones/M20-first-generated-game.md))
 - **Next milestone:** none (M20 is the last roadmap milestone).
 - **Git:** pushed to https://github.com/Michael2701/game-factory (`main`, like Agentic_SRE_Testbed); `generated/` is git-ignored (run outputs). Commit/push only when the user says so.
 
@@ -53,6 +53,7 @@ The product is the agent system; games (e.g. Block Dodger) are only validation o
 | [docs/milestones/M17-reviewer.md](docs/milestones/M17-reviewer.md) | M17 scope, verification log, **real reviews (fixture, block-dodger, loop + review)**, finding: qwen copies the prompt example |
 | [docs/milestones/M18-human-gate.md](docs/milestones/M18-human-gate.md) | M18 scope, verification log, **real loop stopping at the gate + decide.py**, why END + state file instead of `interrupt()` |
 | [docs/milestones/M19-phaser-template.md](docs/milestones/M19-phaser-template.md) | M19 scope, template files, verification log, **real dry run on top of the template** |
+| [docs/milestones/M20-first-generated-game.md](docs/milestones/M20-first-generated-game.md) | M20 runs r1–r6 (Block Dodger through the full pipeline), agent-system fixes per round, limitations, **next steps** |
 
 ## Quick commands
 

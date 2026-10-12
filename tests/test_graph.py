@@ -36,7 +36,7 @@ HOOKS = ("export function setupTestHooks(game: any) {\n"
          "  (window as any).__TEST_API__ = { startGame() {}, skipTime(seconds: number) {} };\n}\n")
 TESTS_TS = """import { test, expect } from '@playwright/test';
 test('a', async ({ page }) => { await page.goto('/'); await page.waitForFunction(() => (window as any).__GAME_STATE__); });
-test('b', async ({ page }) => { await page.goto('/'); await page.evaluate(() => (window as any).__TEST_API__.skipTime(60)); });
+test('b', async ({ page }) => { await page.goto('/'); await page.waitForFunction(() => (window as any).__GAME_STATE__); await page.evaluate(() => (window as any).__TEST_API__.skipTime(60)); });
 test('c', async ({ page }) => { await page.goto('/'); expect(1).toBe(1); });
 """
 

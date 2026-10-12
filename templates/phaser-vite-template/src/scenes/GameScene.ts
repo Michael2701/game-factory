@@ -10,10 +10,16 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     this.result = null;
-    this.add.text(240, 320, 'Game goes here', { color: '#ffffff', fontSize: '28px' }).setOrigin(0.5);
+    // The game goes here (players, timers, collisions); end it with this.endGame('win' | 'lose').
   }
 
-  // Test hook: advance the game timer by `seconds` instantly (the template has no timer yet).
+  endGame(result: 'win' | 'lose') {
+    this.result = result;
+    this.scene.start('GameOverScene', { result });
+  }
+
+  // Test hook: advance the game timer by `seconds` instantly: reduce the remaining time and call
+  // endGame('win') when it reaches 0 (the template has no timer yet).
   skipTime(seconds: number) {
     void seconds;
   }

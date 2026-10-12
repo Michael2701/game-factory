@@ -28,12 +28,14 @@ test('loads', async ({ page }) => {
 
 test('collision loses', async ({ page }) => {
   await page.goto('/');
+  await page.waitForFunction(() => (window as any).__GAME_STATE__?.scene === 'StartScene');
   await page.evaluate(() => (window as any).__TEST_API__.spawnBlockAbovePlayer());
   await page.waitForFunction(() => (window as any).__GAME_STATE__.isGameOver === true);
 });
 
 test('surviving wins', async ({ page }) => {
   await page.goto('/');
+  await page.waitForFunction(() => (window as any).__GAME_STATE__?.scene === 'StartScene');
   await page.evaluate(() => (window as any).__TEST_API__.skipTime(60));
   expect(await page.evaluate(() => (window as any).__GAME_STATE__.result)).toBe('win');
 });

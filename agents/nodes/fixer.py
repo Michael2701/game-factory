@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 from agents.llm import invoke_structured, make_llm
+from agents.nodes.coder import phaser_problems
 from agents.nodes.test_writer import TEST_CALL
 from agents.prompts import format_files, render_prompt
 from agents.schemas import FactoryStatus, FileChangeSet, GameFactoryState, GameSpec, NodeError, TaskPlan, TestResult
@@ -119,6 +120,10 @@ def check_fix(changes: FileChangeSet, relevant: dict[str, str], creatable: list[
             errors.append(f"{where}: content must be raw file text without markdown code fences")
         if change.path.split("/")[-1] == "package.json":
             errors += [f"{where}: {p}" for p in package_json_problems(content, require_build=True)]
+        if change.path.endswith(".ts") and not _is_test_file(change.path):
+            new_code = "\n".join(added_lines(relevant.get(change.path, ""), content))
+            project_code = "\n".join([*(c for p, c in relevant.items() if p.endswith(".ts")), content])
+            errors += phaser_problems(where, new_code, project_code)  # only what the fix adds (M20)
         if not exists:
             continue
 
@@ -159,8 +164,13 @@ def fix(
     fix_attempt: int = 1,
     max_fix_attempts: int = 5,
     llm=None,
+    previous_attempts: list[str] | None = None,
 ) -> FileChangeSet | NodeError:
-    """Propose a minimal fix for a failed TestResult. An empty FileChangeSet means: no safe fix."""
+    """Propose a minimal fix for a failed TestResult. An empty FileChangeSet means: no safe fix.
+
+    `previous_attempts` (M20): one line per earlier step of this fix loop, so the model does not
+    repeat a change that did not help.
+    """
     relevant, creatable = relevant_files(result, project_files)
     schema = FileChangeSet.model_json_schema()
     prompt = render_prompt(
@@ -173,10 +183,17 @@ def fix(
         task_plan=plan if plan is not None else "(not available)",
         fix_attempt=fix_attempt,
         max_fix_attempts=max_fix_attempts,
+        previous_attempts=previous_attempts or "(none: this is the first attempt)",
         schema=schema,
     )
     return invoke_structured(llm or make_llm(), NODE, prompt, FileChangeSet, schema,
                              check=lambda changes: check_fix(changes, relevant, creatable))
+
+
+def attempt_history(state: GameFactoryState) -> list[str]:
+    """Earlier fix-loop steps after the first test run, one line each (shown to the fixer, M20)."""
+    return [f"#{s.attempt} {s.step} {s.status}: {s.summary[:300]}" + (f" [{', '.join(s.files)}]" if s.files else "")
+            for s in state.loop_history if s.attempt > 0]
 
 
 def fixer_node(state: GameFactoryState, llm=None, root: Path = PROJECT_ROOT) -> dict:
@@ -202,7 +219,8 @@ def fixer_node(state: GameFactoryState, llm=None, root: Path = PROJECT_ROOT) -> 
         return error(f"cannot read project {state.target_dir}: {exc}")
 
     attempt = state.fix_attempts + 1
-    proposal = fix(result, project_files, state.game_spec, state.task_plan, attempt, state.max_fix_attempts, llm)
+    proposal = fix(result, project_files, state.game_spec, state.task_plan, attempt, state.max_fix_attempts, llm,
+                   previous_attempts=attempt_history(state))
     if isinstance(proposal, NodeError):
         proposal = proposal.model_copy(update={"message": f"attempt {attempt}: {proposal.message}"})
         return {"fix_attempts": attempt, "status": FactoryStatus.ERROR, "error": f"{NODE}: {proposal.model_dump_json()}"}

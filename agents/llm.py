@@ -78,11 +78,13 @@ def invoke_structured(
     model: type[M],
     schema: dict,
     check: Callable[[M], list[str]] | None = None,
+    normalize: Callable[[M], M] | None = None,
 ) -> "M | NodeError":
     """Call the LLM and return a validated `model`, or a NodeError. Never raises.
 
-    invoke -> parse (+ semantic `check`, which returns error strings) -> on errors one
-    repair call with the `repair` prompt -> parse/check again -> NodeError if still bad.
+    invoke -> parse (-> deterministic `normalize`, M20) (+ semantic `check`, which returns
+    error strings) -> on errors one repair call with the `repair` prompt -> parse/check
+    again -> NodeError if still bad.
     """
     from agents.prompts import render_prompt
 
@@ -91,6 +93,8 @@ def invoke_structured(
             result = parse_model(raw, model)
         except ValueError as exc:  # includes ValidationError and JSON errors
             return None, format_errors(exc)
+        if normalize:
+            result = normalize(result)
         problems = check(result) if check else []
         return (None, problems) if problems else (result, [])
 

@@ -51,7 +51,7 @@ Build a local LangGraph-based agent system that can take a short game idea and a
 - **Milestone 17 — Reviewer Node:** complete.
 - **Milestone 18 — Human Approval Gate:** complete.
 - **Milestone 19 — Phaser Template as Agent Output Target:** complete.
-- **Milestone 20 — First Real Generated Game Validation:** in progress (see [docs/ROADMAP.md](docs/ROADMAP.md) for the live status).
+- **Milestone 20 — First Real Generated Game Validation:** complete with a partial result (human gate reached; no all-green Block Dodger yet), awaiting review (see [docs/ROADMAP.md](docs/ROADMAP.md) for the live status).
 - Existing: Python venv with LangGraph stack, `agents/smoke_graph.py` (a two-node LangGraph planner → reviewer smoke test against Ollama).
 - Pydantic schemas in `agents/schemas/` ([docs/SCHEMAS.md](docs/SCHEMAS.md)); check them with `python scripts/validate_schemas.py`.
 - Prompt templates for all agent roles in `agents/prompts/` ([docs/PROMPTS.md](docs/PROMPTS.md)).

@@ -25,7 +25,7 @@ Source: [plan.md](../plan.md). Milestones are implemented **strictly in order**.
 | 17 | Reviewer Node | complete |
 | 18 | Human Approval Gate | complete |
 | 19 | Phaser Template as Agent Output Target | complete |
-| 20 | First Real Generated Game Validation | in progress |
+| 20 | First Real Generated Game Validation | complete (partial result: gate reached, no all-green run) — awaiting user review |
 
 ## Long-term pipeline
 

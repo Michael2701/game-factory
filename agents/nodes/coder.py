@@ -31,6 +31,30 @@ HOOK_CONTRACT = ("__GAME_STATE__", "__TEST_API__", "scene", "result", "startGame
 
 # Phaser 3.90's ESM build has no default export: `import Phaser from 'phaser'` breaks the build (M14).
 PHASER_DEFAULT_IMPORT = re.compile(r"""\bimport\s+Phaser\s*(?:,[^;]*?)?\s+from\s+['"]phaser['"]""")
+# Phaser 2 style key events never fire in Phaser 3: the player cannot move (M20 real runs).
+PHASER2_KEY_EVENT = re.compile(r"""input\.on\(\s*['"]key(?:down|up)|['"]key(?:down|up)_[A-Z]""")
+TEXTURE_USE = re.compile(r"""\b(?:physics\.)?add\.(?:sprite|image)\(\s*[^,()]+,\s*[^,()]+,\s*['"]([\w-]+)['"]""")
+TEXTURE_DEF = re.compile(r"""\b(?:load\.(?:image|spritesheet|atlas|svg)|generateTexture|textures\.(?:create\w*|add\w*))"""
+                         r"""\(\s*['"]([\w-]+)['"]""")
+
+
+def phaser_problems(where: str, content: str, project_code: str) -> list[str]:
+    """Phaser 3 pitfalls seen in real runs. `project_code`: all project code after the change."""
+    errors = []
+    if PHASER_DEFAULT_IMPORT.search(content):
+        errors.append(f"{where}: `import Phaser from 'phaser'` breaks the build (Phaser 3.90 has no default "
+                      "export); use `import * as Phaser from 'phaser'`")
+    if PHASER2_KEY_EVENT.search(content):
+        errors.append(f"{where}: Phaser 2 key events never fire in Phaser 3 (the player cannot move); use "
+                      "`const cursors = this.input.keyboard!.createCursorKeys()` and read `cursors.left.isDown` in "
+                      "update(), or `this.input.keyboard!.on('keydown-LEFT', ...)`")
+    defined = set(TEXTURE_DEF.findall(project_code))
+    missing = sorted({key for key in TEXTURE_USE.findall(content) if key not in defined})
+    if missing:
+        errors.append(f"{where}: textures {missing} are never loaded or generated, so they render as missing "
+                      "images; this project has no image assets: draw shapes with this.add.rectangle(...) and "
+                      "give them a body with this.physics.add.existing(shape)")
+    return errors
 
 
 def is_coder_task(task: ImplementationTask) -> bool:
@@ -51,6 +75,8 @@ def check_changes(
     M19) may never be changed.
     """
     errors = []
+    after = merge_changes(existing_files, changes.changes)
+    project_code = "\n".join(c for p, c in after.items() if p.endswith(".ts"))
     optional = set(optional_paths) - set(task.target_files)
     allowed = set(task.target_files) | optional
     paths = [c.path for c in changes.changes]
@@ -88,9 +114,8 @@ def check_changes(
             continue
         if "```" in content:
             errors.append(f"{where}: content must be raw file text without markdown code fences")
-        if PHASER_DEFAULT_IMPORT.search(content):
-            errors.append(f"{where}: `import Phaser from 'phaser'` breaks the build (Phaser 3.90 has no default "
-                          "export); use `import * as Phaser from 'phaser'`")
+        if change.path.endswith(".ts"):
+            errors += phaser_problems(where, content, project_code)
         if change.path.endswith(".json") and change.content is not None:
             try:
                 data = json.loads(change.content)

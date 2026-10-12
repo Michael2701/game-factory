@@ -34,6 +34,62 @@ FORBIDDEN = {
 }
 
 
+SCENE_EXPECT = re.compile(
+    r"""expect\(\s*await\s+page\.evaluate\(\s*\(\)\s*=>\s*(?:\(window\s+as\s+any\)|window)\.__GAME_STATE__\??\.scene\s*\)"""
+    r"""\s*\)\.(?:toBe|toEqual)\(\s*(['"])(\w+)\1\s*\)""")
+BOOT_WAIT = "await page.waitForFunction(() => (window as any).__GAME_STATE__?.scene === 'StartScene');"
+GOTO_LINE = re.compile(r"""^([ \t]*)await\s+page\.goto\(\s*['"]/['"]\s*\);[ \t]*$""", re.MULTILINE)
+
+
+def normalize_test_code(code: str) -> tuple[str, list[str]]:
+    """Mechanical rewrites of two races the model keeps writing (M20). Returns (code, notes).
+
+    - `expect(await page.evaluate(() => ...__GAME_STATE__.scene)).toBe('X')` -> wait for scene 'X'
+      (a scene switch takes effect on the next frame);
+    - a test that calls __TEST_API__ before any waitForFunction gets a StartScene wait after page.goto('/').
+    """
+    notes = []
+    code, count = SCENE_EXPECT.subn(
+        lambda m: f"await page.waitForFunction(() => (window as any).__GAME_STATE__?.scene === '{m.group(2)}')", code)
+    if count:
+        notes.append(f"{count} scene check(s) now wait for the scene")
+    starts = [m.start() for m in TEST_START.finditer(code)] + [len(code)]
+    pieces, booted = [code[:starts[0]]], 0
+    for begin, end in zip(starts, starts[1:]):
+        body = code[begin:end]
+        api, wait = body.find("__TEST_API__"), body.find("waitForFunction")
+        if api != -1 and (wait == -1 or wait > api):
+            new_body = GOTO_LINE.sub(lambda m: f"{m.group(0)}\n{m.group(1)}{BOOT_WAIT}", body, count=1)
+            booted += new_body != body
+            body = new_body
+        pieces.append(body)
+    if booted:
+        notes.append(f"{booted} test(s) now wait for the game to boot before __TEST_API__")
+    return "".join(pieces), notes
+
+
+def normalize_tests(changes: FileChangeSet) -> FileChangeSet:
+    out = []
+    for change in changes.changes:
+        if change.path == TEST_FILE and change.content:
+            content, notes = normalize_test_code(change.content)
+            if notes:
+                change = change.model_copy(update={"content": content,
+                                                   "reason": f"{change.reason} (normalized: {'; '.join(notes)})"})
+        out.append(change)
+    return changes.model_copy(update={"changes": out})
+
+
+TEST_START = re.compile(r"""\btest\s*\(\s*(['"`])(.*?)\1""")
+
+
+def _test_bodies(code: str) -> list[tuple[str, str]]:
+    """(title, text up to the next test) for every test(...) call."""
+    starts = list(TEST_START.finditer(code))
+    return [(m.group(2), code[m.end():starts[i + 1].start() if i + 1 < len(starts) else len(code)])
+            for i, m in enumerate(starts)]
+
+
 def check_tests(changes: FileChangeSet, spec: GameSpec, project_files: dict[str, str]) -> list[str]:
     """Static rules for proposed test files. Returns error strings (empty = ok)."""
     errors = []
@@ -86,6 +142,12 @@ def check_tests(changes: FileChangeSet, spec: GameSpec, project_files: dict[str,
         errors.append(f"{where}: tests must load the game with page.goto('/')")
     for url in sorted({u for u in urls if u != "/"}):
         errors.append(f"{where}: page.goto('{url}') is not allowed; use page.goto('/')")
+    for title, body in _test_bodies(code):
+        api = body.find("__TEST_API__")
+        wait = body.find("waitForFunction")
+        if api != -1 and (wait == -1 or wait > api):
+            errors.append(f"{where}: test '{title}' calls __TEST_API__ before the game has booted; first "
+                          "await page.waitForFunction(() => (window as any).__GAME_STATE__?.scene === 'StartScene')")
     if SCENE_READ.search(code):
         errors.append(f"{where}: scene changes take effect on the next frame; check scenes only with "
                       "await page.waitForFunction(() => (window as any).__GAME_STATE__.scene === '<Scene>'), "
@@ -116,7 +178,8 @@ def write_tests(spec: GameSpec, project_files: dict[str, str] | None = None, llm
     schema = FileChangeSet.model_json_schema()
     prompt = render_prompt("test_writer", game_spec=spec, project_files=format_files(project_files), schema=schema)
     return invoke_structured(llm or make_llm(), NODE, prompt, FileChangeSet, schema,
-                             check=lambda changes: check_tests(changes, spec, project_files))
+                             check=lambda changes: check_tests(changes, spec, project_files),
+                             normalize=normalize_tests)
 
 
 def test_writer_dry_run_node(state: GameFactoryState, llm=None) -> dict:

@@ -32,6 +32,10 @@ TaskPlan (context):
 
 {{task_plan}}
 
+Earlier attempts in this fix loop (what was changed and what the next test run said):
+
+{{previous_attempts}}
+
 ## Rules
 
 - First identify the root cause from the error output; fix that cause, not the symptom. The first error reported is usually the one to fix.
@@ -42,6 +46,8 @@ TaskPlan (context):
 - Never raise timeouts or add waits (in tests or playwright.config.ts) to make a test pass. A test timeout means the game never reached the state the test waits for: find the game code that should set that state and fix it.
 - `content` is the raw file text. Never put markdown code fences (```) inside `content`.
 - Scene changes take effect on the next frame. If a test reads `__GAME_STATE__.scene` right after an action (`expect(await page.evaluate(...scene))`) and the game code does switch the scene, the test is wrong: change that line to `await page.waitForFunction(() => (window as any).__GAME_STATE__.scene === '<Scene>')`.
+- Do not repeat a change from an earlier attempt that did not make the error go away: if the same error is still reported, the cause is elsewhere (another line or another file, e.g. the scene the hook calls into).
+- Phaser 3 facts (from real failures): shapes from `this.add.rectangle(...)` have no velocity methods; after `this.physics.add.existing(shape)` move them through their body: `(shape.body as Phaser.Physics.Arcade.Body).setVelocity(x, y)`. Keyboard input is `this.input.keyboard!.createCursorKeys()` (or `this.input.keyboard!.on('keydown-LEFT', ...)`), never `this.input.on('keydown_LEFT', ...)`. Iterate a group with `group.getChildren().forEach(...)`.
 - In `reason`, name the error and the cause in one sentence.
 - Never include shell commands, secrets, tokens, or environment files.
 - If you cannot find a safe fix, return {"changes": []}.

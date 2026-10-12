@@ -29,7 +29,7 @@ EXPECTED_VARIABLES = {
     "coder": {"task", "game_spec", "allowed_paths", "optional_paths", "locked_paths", "existing_files", "schema"},
     "test_writer": {"game_spec", "project_files", "schema"},
     "fixer": {"test_result", "project_tree", "relevant_files", "new_files", "game_spec", "task_plan", "fix_attempt",
-              "max_fix_attempts", "schema"},
+              "max_fix_attempts", "previous_attempts", "schema"},
     "reviewer": {"game_spec", "files_summary", "test_result", "facts", "schema"},
     "repair": {"raw_output", "errors", "schema"},
 }
@@ -75,6 +75,7 @@ def sample_variables(name: str) -> dict:
         "files_summary": ["index.html", "src/main.ts", "src/scenes/GameScene.ts"],
         "facts": {"build_ok": True, "test_hooks_present": True},
         "fix_attempt": 1,
+        "previous_attempts": ["#1 fix proposed: x [src/main.ts]"],
         "max_fix_attempts": 5,
         "raw_output": '{"title": "Snake"}',
         "errors": "- slug: Field required",

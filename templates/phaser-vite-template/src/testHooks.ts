@@ -6,7 +6,9 @@ export function setupTestHooks(game: Phaser.Game) {
   const gameScene = () => game.scene.getScene('GameScene') as GameScene;
   (window as any).__GAME_STATE__ = {
     get scene() {
-      return game.scene.getScenes(true)[0]?.scene.key ?? null;
+      // the most recent active scene (scenes run in the order of the game config)
+      const active = game.scene.getScenes(true);
+      return active[active.length - 1]?.scene.key ?? null;
     },
     get result() {
       return gameScene()?.result ?? null;
