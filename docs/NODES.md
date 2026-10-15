@@ -16,7 +16,7 @@ def <name>_node(state: GameFactoryState, llm=None) -> dict:      # LangGraph wra
 ```
 
 - **Return partial state updates** (dicts), not a whole state.
-- **`llm` is injectable**; default `agents.llm.make_llm()` (`qwen2.5-coder:14b`, temperature 0.2). Tests pass a fake.
+- **`llm` is injectable**; default `agents.llm.make_llm()` (model from `.env`, default `qwen3:30b-a3b`, temperature 0.2). Tests pass a fake.
 - **Never raise** for expected failures: invalid input, invalid model output, LLM/Ollama unavailable → `NodeError` ([SCHEMAS.md](SCHEMAS.md)).
 - In a graph, bind the llm with a lambda: `graph.add_node("planner", lambda s: planner_node(s, llm=llm))` — see `build_graph` in `agents/game_factory_graph.py` and the Graph section of [ARCHITECTURE.md](ARCHITECTURE.md).
 

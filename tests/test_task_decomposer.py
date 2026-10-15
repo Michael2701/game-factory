@@ -51,7 +51,7 @@ class CheckPlanTest(unittest.TestCase):
     def test_prompt_example_passes_for_its_own_spec(self):
         example = load_prompt("task_decomposer").split("```json\n", 1)[1].split("\n```", 1)[0]
         plan = TaskPlan.model_validate_json(example)
-        spec = SPEC.model_copy(update={"slug": "target-tapper"})
+        spec = SPEC.model_copy(update={"slug": "pair-finder"})
         self.assertEqual(check_plan(plan, spec, template=DEFAULT_TEMPLATE), [])  # M19: example uses the template
 
     def test_violations(self):

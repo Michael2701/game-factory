@@ -6,8 +6,9 @@ The product is the agent system; games (e.g. Block Dodger) are only validation o
 ## Current status
 
 - **Done:** M1 Skeleton · M2 Schemas · M3 Prompts · M4 Planner · M5 Task Decomposer · M6 Safe Tools · M7 Graph Skeleton · M8 Coder Dry Run · M9 Applier · M10 Minimal Project · M11 Test Writer · M12 Test Runner · M13 End-to-End Dry Run · M14 Apply Flow · M15 Fixer Node · M16 Fix Loop Graph · M17 Reviewer Node · M18 Human Approval Gate · M19 Phaser Template
-- **Roadmap M1–M20 done.** After the roadmap: **M21 — Playable generated game — complete** (r8 on qwen2.5-coder:32b meets all technical criteria, see [docs/milestones/M21-playable-game.md](docs/milestones/M21-playable-game.md)).
-- **Current milestone:** M22 — Quality bar (plan approved by the user; in progress).
+- **Roadmap M1–M20 done.** After the roadmap: **M21 — Playable generated game — complete**; **M21b — Quality bar, run log, fix-loop hardening — complete (infrastructure; runs partial)**; **M21c — Game-agnostic factory (per-game playtest) — in progress**.
+- **Next:** [plan-2.md](plan-2.md) M22–M36 (backend, Studio, assets, public portal) — one milestone at a time, each with its own Lavish plan, only on the user's word.
+- **Model:** set in the git-ignored `.env` (`GAME_FACTORY_MODEL`, see `.env.example`); default `qwen3:30b-a3b` (the qwen2.5-coder models were removed).
 - **Git:** pushed to https://github.com/Michael2701/game-factory (`main`, like Agentic_SRE_Testbed); `generated/` is git-ignored (run outputs). Commit/push only when the user says so.
 
 ## Hard rules (always apply)
@@ -55,6 +56,9 @@ The product is the agent system; games (e.g. Block Dodger) are only validation o
 | [docs/milestones/M19-phaser-template.md](docs/milestones/M19-phaser-template.md) | M19 scope, template files, verification log, **real dry run on top of the template** |
 | [docs/milestones/M21-playable-game.md](docs/milestones/M21-playable-game.md) | M21: acceptance spec with real input, browser-error fixture + source maps, fixer anti-repeat, model config, runs r7/r7b (14b) and r8 (32b, 11/11) |
 | [docs/milestones/M20-first-generated-game.md](docs/milestones/M20-first-generated-game.md) | M20 runs r1–r6 (Block Dodger through the full pipeline), agent-system fixes per round, limitations, **next steps** |
+| [docs/milestones/M21b-quality-bar.md](docs/milestones/M21b-quality-bar.md) | Quality bar, **run log** (logs/runs, show_run.py), model `.env` + limits, revert by acceptance progress, deterministic Phaser checks, runs r10–r13 |
+| [docs/milestones/M21c-game-agnostic.md](docs/milestones/M21c-game-agnostic.md) | **GameSpec.playtest → per-game acceptance + hook contract**, generic template hooks, fixture games (clicker, jumper), runs on 3 different ideas |
+| [plan-2.md](plan-2.md) | Next roadmap M22–M36: backend, Studio, asset management, public portal (from the user) |
 
 ## Quick commands
 
@@ -80,6 +84,8 @@ python scripts/run_fix_loop.py [--case two-bugs] [--project-dir generated/x]  # 
 python scripts/run_reviewer.py --project-dir generated/x [--spec spec.json] [--json]  # test + review an existing project → ReviewResult, no writes (Ollama + npm)
 python scripts/new_from_template.py --target generated/x [--check]  # Phaser template → new project (+ install, build, 3 smoke tests)
 python scripts/audit_generated.py --project-dir generated/x   # M21: sources match the agent-write manifest (no manual edits)
-GAME_FACTORY_MODEL=qwen2.5-coder:32b python agents/game_factory_graph.py --fix-loop   # or --model …
+GAME_FACTORY_MODEL=qwen3:30b-a3b python agents/game_factory_graph.py --fix-loop   # or --model …, or .env
+python agents/game_factory_graph.py "idea" --fix-loop --run-id my-run   # live log: logs/runs/my-run/run.log
+python scripts/show_run.py latest [--follow] [--llm N]          # run timeline / one LLM call (prompt, reasoning, reply)
 python scripts/decide.py --project-dir generated/x --show | approve | reject | changes [--note "…"]  # human decision at the gate (no LLM)
 ```

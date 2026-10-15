@@ -11,7 +11,7 @@ class State(TypedDict):
 
 
 llm = ChatOllama(
-    model="qwen2.5-coder:14b",
+    model=__import__("os").environ.get("GAME_FACTORY_MODEL", "qwen3:30b-a3b"),  # M21b: the 14b was removed
     temperature=0.2,
 )
 

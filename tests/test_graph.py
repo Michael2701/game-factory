@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))  # shared helpers (fakes.py) when run as a single module
 
+from agents.nodes.planner import with_quality_bar  # noqa: E402
 from agents import game_factory_graph as gfg  # noqa: E402
 from agents.schemas import FactoryStatus, GameFactoryState  # noqa: E402
 from agents.generators.phaser_template import instantiate  # noqa: E402
@@ -32,8 +33,8 @@ MAIN_V2 = ("import * as Phaser from 'phaser';\nimport { StartScene } from './sce
            "import { setupTestHooks } from './testHooks';\n"
            "setupTestHooks(new Phaser.Game({ scene: [StartScene, GameScene, GameOverScene] }));\n")
 HOOKS = ("export function setupTestHooks(game: any) {\n"
-         "  (window as any).__GAME_STATE__ = { scene: 'StartScene', result: null, playerX: 240 };\n"
-         "  (window as any).__TEST_API__ = { startGame() {}, skipTime(seconds: number) {} };\n}\n")
+         "  (window as any).__GAME_STATE__ = { scene: 'StartScene', result: null, player: { x: 240, y: 600 }, difficulty: 1, texts: [], objects: [] };\n"
+         "  (window as any).__TEST_API__ = { startGame() {}, skipTime(seconds: number) {}, finishRound(result: string) {} };\n}\n")
 TESTS_TS = """import { test, expect } from '@playwright/test';
 test('a', async ({ page }) => { await page.goto('/'); await page.waitForFunction(() => (window as any).__GAME_STATE__); });
 test('b', async ({ page }) => { await page.goto('/'); await page.waitForFunction(() => (window as any).__GAME_STATE__); await page.evaluate(() => (window as any).__TEST_API__.skipTime(60)); });
@@ -47,15 +48,17 @@ def changes(*items) -> str:
 
 CODER_REPLIES = [
     changes(("src/scenes/StartScene.ts", "update", "export class StartScene { create() { this.input.once('pointerdown', f); } }\n"),          # T1 (+ main.ts)
-            ("src/scenes/GameScene.ts", "update", "export class GameScene {}\n"),
-            ("src/scenes/GameOverScene.ts", "create", "export class GameOverScene {}\n"),
+            ("src/scenes/GameScene.ts", "update",  # M21c: the sample playtest needs keyboard, player, difficulty
+             "export class GameScene {\n  create() {\n    this.player = this.add.rectangle(1, 2, 3, 4);\n"
+             "    this.difficulty = 1;\n    this.cursors = this.input.keyboard!.createCursorKeys();\n  }\n}\n"),
+            ("src/scenes/GameOverScene.ts", "update", "export class GameOverScene {}\n"),
             ("src/main.ts", "update", MAIN_V2)),
     changes(("src/testHooks.ts", "update", HOOKS)),                                            # T2
 ]
 TEST_REPLY = changes(("tests/game.spec.ts", "update", TESTS_TS))
 ALL_REPLIES = [SPEC_JSON, PLAN_JSON, *CODER_REPLIES, TEST_REPLY]
-# template + the one new scene + the factory-written acceptance test (M21); .factory/manifest.json is bookkeeping
-PROJECT_FILES = sorted({*TEMPLATE, "src/scenes/GameOverScene.ts", "tests/acceptance.spec.ts"})
+# template + the factory-written acceptance test (M21); .factory/manifest.json is bookkeeping
+PROJECT_FILES = sorted({*TEMPLATE, "tests/acceptance.spec.ts"})
 
 
 def run_main(argv, llm, root=None):
@@ -92,7 +95,7 @@ class GraphRunTest(unittest.TestCase):
         llm = FakeLLM(*ALL_REPLIES)
         state = gfg.run(BLOCK_DODGER_IDEA, llm=llm)
         self.assertEqual(state.status, FactoryStatus.CHANGES_PROPOSED, state.error)
-        self.assertEqual(state.game_spec, sample_game_spec())
+        self.assertEqual(state.game_spec, with_quality_bar(sample_game_spec()))  # M22
         self.assertEqual(state.task_plan, sample_template_task_plan())
         self.assertEqual(state.template, "phaser-vite-template")
         self.assertEqual([c.path for c in state.proposed_changes], [  # only the agents' changes, not the template
@@ -145,7 +148,7 @@ class GraphRunTest(unittest.TestCase):
         llm = FakeLLM(SPEC_JSON, BAD, BAD)
         state = gfg.run(BLOCK_DODGER_IDEA, llm=llm)
         self.assertTrue(state.error.startswith("task_decomposer: "))
-        self.assertEqual(state.game_spec, sample_game_spec())
+        self.assertEqual(state.game_spec, with_quality_bar(sample_game_spec()))  # M22
         self.assertEqual(len(llm.prompts), 3)
 
     def test_coder_failure_keeps_partial_proposals(self):
@@ -203,7 +206,7 @@ class OutputTest(unittest.TestCase):
     def test_format_state_sections(self):
         state = gfg.run(BLOCK_DODGER_IDEA, llm=FakeLLM(*ALL_REPLIES))
         text = gfg.format_state(state)
-        for needle in ["=== GAME SPEC ===", "=== TASK PLAN ===", "=== PROPOSED FILES ===", "CREATE src/scenes/GameOverScene.ts",
+        for needle in ["=== GAME SPEC ===", "=== TASK PLAN ===", "=== PROPOSED FILES ===", "UPDATE src/scenes/GameOverScene.ts",
                        "UPDATE src/main.ts", "=== PROPOSED TESTS ===", "tests/game.spec.ts", "changes_proposed"]:
             self.assertIn(needle, text)
         self.assertNotIn("--- src/main.ts ---", text)

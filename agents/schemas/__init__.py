@@ -1,7 +1,16 @@
 """Pydantic schemas shared by all agent nodes. Reference: docs/SCHEMAS.md."""
 
 from agents.schemas.agent_state import FactoryStatus, FixRecord, GameFactoryState, HumanDecision, LoopStep
-from agents.schemas.game_spec import Control, GameIdea, GameSpec, Scene
+from agents.schemas.game_spec import (
+    Control,
+    GameIdea,
+    GameSpec,
+    Playtest,
+    PlaytestInput,
+    PlaytestPlayer,
+    PlaytestRoundEnd,
+    Scene,
+)
 from agents.schemas.node_error import NodeError
 from agents.schemas.review_result import ReviewCheck, ReviewResult
 from agents.schemas.task_plan import FileChange, FileChangeSet, ImplementationTask, TaskPlan
@@ -21,6 +30,10 @@ __all__ = [
     "ImplementationTask",
     "LoopStep",
     "NodeError",
+    "Playtest",
+    "PlaytestInput",
+    "PlaytestPlayer",
+    "PlaytestRoundEnd",
     "ReviewCheck",
     "ReviewResult",
     "Scene",

@@ -28,7 +28,7 @@ planner ──► GameSpec ──► task_decomposer ──► TaskPlan
                                      human approval gate ──► build artifact
 ```
 
-Nodes are LangGraph nodes over a shared `GameFactoryState` (**exists**, see [SCHEMAS.md](SCHEMAS.md)). LLM: `ChatOllama(model="qwen2.5-coder:14b", temperature=0.2)`. Every LLM output is parsed into a Pydantic model — free text is never a final output.
+Nodes are LangGraph nodes over a shared `GameFactoryState` (**exists**, see [SCHEMAS.md](SCHEMAS.md)). LLM: `agents.llm.make_llm()` (`ChatOllama`, model from `--model` / `GAME_FACTORY_MODEL` / `.env`, default qwen3:30b-a3b, temperature 0.2, reasoning kept separate, token + time limits). Every LLM output is parsed into a Pydantic model — free text is never a final output.
 
 ## Graph (current wiring, M13 dry run + M14 `--apply` + M16 `--fix-loop` + M17 reviewer + M18 human gate)
 
@@ -76,7 +76,7 @@ build_fix_loop_graph:  START → test_runner → (same loop + reviewer + human_g
 | `agents/smoke_graph.py` | Original 2-node smoke test (planner → reviewer). Frozen. Runs on import — never import it. | exists |
 | `agents/schemas/` | Pydantic models: game_spec, task_plan, test_result, review_result, agent_state; `examples.py` = Block Dodger samples | exists (M2) |
 | `agents/prompts/` | Markdown prompt templates per role + strict `{{var}}` loader ([PROMPTS.md](PROMPTS.md)) | exists (M3) |
-| `agents/llm.py` | `make_llm()` (qwen2.5-coder:14b), `extract_json` (+ `fix_invalid_escapes`), `parse_model`, `invoke_structured` (parse → check → repair → NodeError) — shared by LLM nodes | exists (M4–M5) |
+| `agents/llm.py` | `make_llm()` (model from .env, limits; every call logged when a run log is active), `extract_json` (+ `fix_invalid_escapes`), `parse_model`, `invoke_structured` (parse → check → repair → NodeError) — shared by LLM nodes | exists (M4–M5) |
 | `agents/nodes/` | LangGraph nodes ([NODES.md](NODES.md)): planner (M4), task_decomposer (M5), coder (M8/M13), test_writer (M11/M13), applier (M14), test_runner (M12, deterministic), fixer (M15) and apply_fix (M16, fix loop), reviewer (M17, after the fix loop) and human_gate (M18, stops the graph) are in the graph | exists |
 | `agents/fixtures/` | In-memory fixtures: `broken_projects.py` = a complete passing Phaser + Vite + Playwright project (`BASE_FILES`) and broken variants with their failing TestResults: fixer dry run (M15) and fix loop (M16; `fails_for_real` marks the cases that really fail on disk) | exists (M15) |
 | `agents/tools/` | safety, filesystem, commands (M6), apply_changes (M9) — see [TOOLS.md](TOOLS.md) | exists |

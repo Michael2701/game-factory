@@ -32,9 +32,10 @@ class FactoryStatus(StrEnum):
 class LoopStep(StrictModel):
     """One step of the fix loop (M16), recorded by the graph for the report."""
 
-    step: Literal["test", "fix", "apply_fix"]
+    step: Literal["test", "fix", "apply_fix", "revert"]  # revert (M21b): a fix made the tests worse
     attempt: int = Field(ge=0)  # fix attempt the step belongs to; 0 = initial test run
     status: str = Field(min_length=1)  # test: passed/failed/error · fix: proposed/error · apply_fix: applied/error
+    #                                    · revert: reverted/error
     summary: str = ""
     files: list[str] = Field(default_factory=list)  # fix: proposed paths · apply_fix: written paths
 
@@ -47,6 +48,7 @@ class FixRecord(StrictModel):
     signature: str = ""  # normalized first failure the fix was meant to solve
     lines: list[str] = Field(default_factory=list)  # normalized lines the fix added or removed
     no_effect: bool = False  # applied, but the next test run failed with the same signature
+    made_worse: bool = False  # applied, the next test run was worse (build / acceptance progress / count), reverted (M21b)
 
 
 class HumanDecision(StrictModel):
@@ -73,6 +75,10 @@ class GameFactoryState(StrictModel):
     human_decision: HumanDecision | None = None  # set by decide() after the human gate (M18)
     loop_history: list[LoopStep] = Field(default_factory=list)  # test / fix / apply_fix steps (M16)
     fix_records: list[FixRecord] = Field(default_factory=list)  # fixer proposals, for anti-repeat (M21)
+    # M21b: undo of the last applied fix (old contents / deletes) and the test result before it, so a fix
+    # that makes the tests worse is reverted after the next test run
+    fix_backup: list[FileChange] = Field(default_factory=list)
+    fix_baseline: TestResult | None = None
     fix_attempts: int = Field(default=0, ge=0)
     max_fix_attempts: int = Field(default=5, ge=0)
     status: FactoryStatus = FactoryStatus.NEW

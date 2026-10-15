@@ -153,4 +153,4 @@ class HookHintsTest(unittest.TestCase):
         from agents.schemas.examples import sample_template_task_plan
         task = sample_template_task_plan().tasks[1]
         errors = check_changes(cs(("src/testHooks.ts", hooks)), task, {"src/testHooks.ts": "old"})
-        self.assertTrue(any("missing ['result']" in e for e in errors), errors)
+        self.assertTrue(any("missing ['result', 'texts', 'objects', 'finishRound']" in e for e in errors), errors)

@@ -199,13 +199,13 @@ def write_tests(spec: GameSpec, project_files: dict[str, str] | None = None, llm
 
 def test_writer_dry_run_node(state: GameFactoryState, llm=None) -> dict:
     """LangGraph node (M13): propose tests against the virtual project (template base, M19 + coder proposals)."""
-    from agents.generators.phaser_template import project_base
+    from agents.generators.phaser_template import spec_base
     from agents.nodes.coder import merge_changes  # local import: coder imports nothing from here
 
     if state.game_spec is None:
         error = NodeError(node=NODE, message="state has no game_spec; run the planner first")
         return {"status": FactoryStatus.ERROR, "error": f"{NODE}: {error.model_dump_json()}"}
-    project_files = merge_changes(project_base(state.template, state.game_spec.slug, state.game_spec.title),
+    project_files = merge_changes(spec_base(state.template, state.game_spec),
                                   state.proposed_changes)
     result = write_tests(state.game_spec, project_files, llm=llm)
     if isinstance(result, NodeError):

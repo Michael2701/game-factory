@@ -12,3 +12,9 @@ playwright-report/
 # Agent run outputs (generated games); reproducible, documented in docs/milestones
 generated/*
 !generated/.gitkeep
+
+# Local config (model etc.), see .env.example
+.env
+
+# Run logs (M21b): logs/runs/<run-id>/, see agents/run_log.py
+logs/

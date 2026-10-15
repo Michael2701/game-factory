@@ -25,7 +25,7 @@ RUN_OLLAMA_TESTS=1 python -m unittest discover -s tests -v   # + LLM tests
 ## Prerequisites for LLM tests
 
 - Ollama server running: `ollama serve` (or the Ollama app). Check: `ollama list`.
-- Model present: `qwen2.5-coder:14b`. A cold load can take 30–90 s; LLM tests use generous timeouts.
+- Model: `GAME_FACTORY_MODEL` from the environment or the git-ignored `.env` (default `qwen3:30b-a3b`). A cold load can take 30–90 s; LLM tests use generous timeouts. Every LLM call is capped (16 384 tokens, 900 s).
 - Long LLM runs: prevent macOS idle sleep, otherwise generation stalls (seen in M6: 15 min at ~1 tok/s): `caffeinate -i python -m unittest discover -s tests` (with `RUN_OLLAMA_TESTS=1`).
 
 ## Current tests
@@ -56,7 +56,12 @@ RUN_OLLAMA_TESTS=1 python -m unittest discover -s tests -v   # + LLM tests
 | `tests/test_browser_errors.py` | M21: VLQ decoder + frame mapping (missing/bad map leaves raw frames), `./fixtures` import (normalizer + check), new locked files, debug-build env only for the build step; gated `RUN_NPM_TESTS`: **an uncaught exception in GameScene is reported as "Browser errors" with `src/scenes/GameScene.ts:L`** | gated test only |
 | `tests/test_m21_locks.py` | fixer rejects locked files, StartScene must keep `pointerdown`, manifest after apply/apply_fix, `scripts/audit_generated.py` detects changed/added files | — (fast only) |
 | `tests/test_fixer_antirepeat.py` | normalized lines/fingerprints, failure signature, whitespace-only / repeated / blocked-line fixes rejected, widened relevant files + budget, trimmed failures, loop marks no-effect fixes, hook-property contract + fixer hook hints | — (fast only) |
-| `tests/test_model_config.py` | `GAME_FACTORY_MODEL` / explicit model precedence, `--model` on the graph CLI and `run_fix_loop.py` | — (fast only) |
+| `tests/test_model_config.py` | model precedence (`--model` > env > `.env` > default), `.env` format, token/time limits, cut-off reply → repair hint, `<think>` stripped | — (fast only) |
+| `tests/test_run_log.py` | M21b run log: node events, LLM call files (prompt / reasoning / reply / repair), no log → nothing written, `show_run.py` | — (fast only) |
+| `tests/test_gameplay_checks.py` | M21b/c deterministic Phaser checks (invented clock APIs, body events, velocity before group add), per-game keyboard / scene members / unwired lose handlers | — (fast only) |
+| `tests/test_playtest.py` | M21c playtest: key normalization, consistency with the spec, derived hook contract, planner repair, reviewer "not applicable" | — (fast only) |
+| `tests/test_acceptance.py` | M21c acceptance generator for 5 genres (dodger, clicker, jumper, snake, memory): steps follow the playtest, real input, time budget | — (fast only) |
+| `tests/test_playtest_games.py` | M21c fixture games (clicker, jumper) pass their own acceptance; removed features fail at their step | yes (npm) |
 | `tests/test_smoke_graph.py` | `python agents/smoke_graph.py` exits 0 and prints SPEC + REVIEW | yes |
 
 ## Adding tests

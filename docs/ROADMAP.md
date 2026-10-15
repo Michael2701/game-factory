@@ -195,3 +195,12 @@ User game idea → Planner → Structured GameSpec → Task decomposition → Co
 **Objective:** generate Block Dodger through the agent pipeline.
 
 **Done when:** the system generates a playable browser game, runs build/tests, fixes simple errors, and reaches human review.
+
+## After the roadmap
+
+| Milestone | Status | Report |
+|---|---|---|
+| M21 — Playable generated game | complete | [M21](milestones/M21-playable-game.md) |
+| M21b — Quality bar, run log, fix-loop hardening (was "M22") | complete (infrastructure); runs r10–r13 partial | [M21b](milestones/M21b-quality-bar.md) |
+| M21c — Game-agnostic factory: per-game playtest → acceptance + hook contract | in progress | [M21c](milestones/M21c-game-agnostic.md) |
+| M22–M36 — platform: backend, Studio, assets, portal | next, one at a time on the user's word | [plan-2.md](../plan-2.md) |

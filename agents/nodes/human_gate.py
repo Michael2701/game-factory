@@ -18,7 +18,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from agents.nodes.applier import check_fix_target
-from agents.schemas import FactoryStatus, GameFactoryState, HumanDecision
+from agents.schemas import FactoryStatus, GameFactoryState, HumanDecision, TestFailure, TestResult
 from agents.tools.filesystem import read_file, write_file
 from agents.tools.safety import PROJECT_ROOT, SafetyError
 
@@ -60,6 +60,16 @@ def load_state(target_dir: str, root: Path = PROJECT_ROOT) -> GameFactoryState:
         raise ValueError(f"{path} is not a valid GameFactoryState: {exc.errors()[0]['msg']}") from exc
 
 
+def saved_spec_and_plan(target_dir: str, root: Path = PROJECT_ROOT):
+    """(GameSpec, TaskPlan | None) the project was generated from (its saved state), or None (M21c: scripts
+    working on an existing project must use ITS spec, not the Block Dodger sample)."""
+    try:
+        state = load_state(target_dir, root)
+    except (SafetyError, ValueError):
+        return None
+    return (state.game_spec, state.task_plan) if state.game_spec is not None else None
+
+
 def human_gate_node(state: GameFactoryState, root: Path = PROJECT_ROOT) -> dict:
     """LangGraph node: status -> needs_human_review, state saved to the project; the graph ends here."""
     def error(message: str) -> dict:
@@ -91,6 +101,17 @@ def decide(state: GameFactoryState, decision: str, note: str = "", now: datetime
     return state.model_copy(update={"status": DECISIONS[decision], "human_decision": record})
 
 
+HUMAN_REVIEW = "human review (decide.py changes)"
+
+
+def human_review_failure(note: str) -> TestResult:
+    """A human's "changes" note as a failing result, so the fixer implements it (M22)."""
+    message = (f"A human played the game and asked for: {note}\n"
+               "Implement exactly this in the game code (src/); keep everything else and all tests working.")
+    return TestResult(status="failed", summary="human review: changes requested",
+                      failures=[TestFailure(name=HUMAN_REVIEW, message=message)])
+
+
 def next_actions(state: GameFactoryState) -> list[str]:
     """What a human can do next, for the current status."""
     target = state.target_dir or "<project>"
@@ -113,9 +134,9 @@ def next_actions(state: GameFactoryState) -> list[str]:
                 "publishing is not automated"]
     if status == FactoryStatus.NEEDS_CHANGES:
         return [*([f"requested: {note}"] if note else []),
-                f"re-run the fix loop (stops at the gate again): python scripts/run_fix_loop.py --project-dir {target}",
-                f"or edit the files in {target}/ by hand, then re-run the fix loop",
-                "the note is not passed to the fixer automatically"]
+                f"let the fixer implement the note (then test, review, gate again): "
+                f"python scripts/run_fix_loop.py --project-dir {target} --from-decision",
+                f"or re-run only the tests and the fix loop: python scripts/run_fix_loop.py --project-dir {target}"]
     if status == FactoryStatus.REJECTED:
         return [f"the project stays in {target}/; delete it by hand if it is not needed",
                 'or generate a new project: python agents/game_factory_graph.py "<idea>" --fix-loop']

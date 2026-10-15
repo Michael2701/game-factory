@@ -42,18 +42,27 @@ Existing files (path and current content):
 - JSON files must be valid JSON. In `package.json`, `scripts.build` must be exactly "vite build" or "tsc && vite build" (other build scripts are rejected by the build tool).
 - Keep code small, readable and typed. Phaser 3 API only; no extra libraries beyond phaser, vite, typescript and @playwright/test.
 - Always import Phaser as `import * as Phaser from 'phaser';` — never `import Phaser from 'phaser'` (Phaser 3.90 has no default export; the build fails).
-- Phaser 3 facts (from real failures):
-  - Keyboard: `const cursors = this.input.keyboard!.createCursorKeys();` and check `cursors.left.isDown` / `cursors.right.isDown` in `update()`. Never `this.input.on('keydown_LEFT', ...)` (old pre-3.16 event names on the wrong plugin; they never fire).
-  - There are no image assets: draw objects with `this.add.rectangle(x, y, w, h, color)`, give them physics with `this.physics.add.existing(shape)`, and move them through the body: `(shape.body as Phaser.Physics.Arcade.Body).setVelocityY(200)`. Never use `add.sprite`/`physics.add.sprite` with a texture key that is not loaded.
-  - Iterate a group with `group.getChildren().forEach(...)`; collisions: `this.physics.add.overlap(player, blocks, () => ..., undefined, this)`.
-  - End the game with `this.scene.start('GameOverScene', { result })` so `__GAME_STATE__.scene` changes.
-- The start screen starts the game on a click anywhere: keep `this.input.once('pointerdown', () => this.scene.start('GameScene'))` in StartScene. An acceptance test clicks the canvas and presses the real arrow keys, so the player must move with the keyboard.
-- Existing files may be template placeholders (e.g. "Game goes here"): replace the placeholder parts with your task's implementation, keep what other code relies on (scene keys, `result`, `skipTime`, exported names).
-- Keep the game testable: game state must stay reachable through `window.__GAME_STATE__` and `window.__TEST_API__` when the task touches game logic.
-- For a `test_hooks` task, expose at least this hook contract (tests rely on it), plus every hook named in the GameSpec test_requirements:
-  - `window.__GAME_STATE__`: `scene` (current scene key), `result` ('win' | 'lose' | null), `playerX` (the player's current x, read from the player object), and the game values the test_requirements mention;
-  - `window.__TEST_API__`: `startGame()` (go to the game scene), `skipTime(seconds)` (advance the game timer instantly: DEcrease the remaining time by `seconds` and end the game right away when it reaches 0), and the methods the test_requirements mention.
-  Make sure the hooks are actually installed when the game starts (wire them in src/main.ts if needed).
+- Phaser 3 facts (from real failures; general API, not a recipe for one kind of game):
+  - Time: Phaser passes the elapsed milliseconds to `update(time: number, delta: number)`; `this.time.deltaTime`, `this.time.delta` and `this.time.add()` do not exist (NaN / TypeError). Use `this.time.addEvent({ delay, loop, callback, callbackScope: this })` or `this.time.delayedCall(ms, fn)` for timers. Phaser's clock cannot be advanced by hand: keep your own counters (e.g. `this.elapsed`) for anything `skipTime` must advance.
+  - Keyboard: `this.input.keyboard!.createCursorKeys()` (arrows + space + shift, read `.isDown` in `update()`), `this.input.keyboard!.addKey('W')` / `addKeys('W,A,S,D')`, or `this.input.keyboard!.on('keydown-SPACE', fn)`. Never `this.input.on('keydown_LEFT', ...)` (old event names on the wrong plugin; they never fire).
+  - Pointer: `this.input.on('pointerdown', (p: Phaser.Input.Pointer) => ...)` (p.x / p.y in game coordinates), or `shape.setInteractive()` + `shape.on('pointerdown', fn)` for a clickable object.
+  - There are no image assets: draw objects with `this.add.rectangle(x, y, w, h, color)` / `this.add.circle(x, y, r, color)` / `this.add.text(...)`; never `add.sprite`/`add.image` with a texture key that is not loaded.
+  - Physics (only if the game needs motion or collisions): `this.physics.add.existing(shape)`, then move it through its body `(shape.body as Phaser.Physics.Arcade.Body).setVelocity(x, y)`. In a physics group (`this.physics.add.group()`), add the object to the group FIRST and set the velocity after (adding resets it). An Arcade body has no events (no `body.on(...)`): check positions in `update()`. Collisions: `this.physics.add.overlap(a, b, () => ..., undefined, this)` / `collider(...)`. Iterate a group with `group.getChildren().forEach(...)`.
+  - Every handler that ends the round (`this.endGame('win' | 'lose')`) must be registered somewhere (input handler, overlap/collider, timer), or that result can never happen. End the round only through `endGame(...)` (it starts GameOverScene, so `__GAME_STATE__.scene` changes).
+  - Animations / feedback: `this.tweens.add({ targets, alpha, scale, duration, yoyo })`, `this.cameras.main.flash(...)` / `shake(...)` (helpers `flash` / `shake` in src/ui.ts).
+- Quality bar (checked by the automatic acceptance test and the reviewer; use the helpers in src/ui.ts: PALETTE, title, hint, hud, flash, shake — import them with `from '../ui'` in src/scenes/*.ts and `from './ui'` in src/*.ts):
+  - HUD: the GameScene shows the game's key value (score, time, moves, lives… — whatever the GameSpec uses) with the template's `hudText` and updates it whenever the value changes (`this.hudText.setText(...)`), also inside `skipTime`.
+  - Feedback: important events (hits, pickups, matches, mistakes) give visible feedback (flash, shake, tween, colour change); GameOverScene states the result.
+  - Difficulty only if the GameSpec playtest has `difficulty_ramps: true`: derive `this.difficulty` (a number that grows) from your own elapsed-time counter, which `update()` and `skipTime(seconds)` both advance.
+  - Colours from PALETTE by role: `primary` for what the player controls or clicks, `danger` for what hurts, `good` for what helps — never the same colour for different roles.
+  - Start and result screens: keep what StartScene and GameOverScene already show (title, controls line, click to start / play again).
+- How the automatic acceptance test plays THIS game (derived from the GameSpec; make each line true):
+
+{{playtest}}
+
+- The test hooks (src/testHooks.ts) read these members of GameScene; set the ones the lines above need: `player` (the avatar game object), `score` (a number), `difficulty` (a number), `clickTarget` (`{x, y}` where a meaningful click goes right now, or null). `skipTime(seconds)` advances the game's own clock by that much (timers, counters, difficulty; end the round if time runs out); `endGame(result)` ends the round.
+- Existing files may be template placeholders (e.g. "The game goes here"): replace the placeholder parts with your task's implementation, keep what other code relies on (scene keys, `result`, `endGame`, `skipTime`, exported names).
+- For a `test_hooks` task: keep every getter and method of the template's src/testHooks.ts (scene, result, player, score, difficulty, clickTarget, texts, objects, startGame, skipTime, finishRound) and add the game values and methods the GameSpec test_requirements mention. Make sure the hooks are installed when the game starts (src/main.ts calls setupTestHooks).
 - `reason` names the task id and what the change does.
 
 ## Output format
@@ -65,22 +74,16 @@ Use exactly the fields of this JSON Schema — no extra fields:
 
 ## Example output
 
-For the Target Tapper task "T3 Game over scene" with allowed paths ["src/scenes/GameOverScene.ts"], optional path ["src/main.ts"] and the template's src/main.ts among the existing files:
+For the Pair Finder (memory game) task "T2 Result screen" with allowed paths ["src/scenes/GameOverScene.ts"] and the template's GameOverScene among the existing files — a DIFFERENT game than yours, it only shows the format:
 
 ```json
 {
   "changes": [
     {
       "path": "src/scenes/GameOverScene.ts",
-      "operation": "create",
-      "content": "import * as Phaser from 'phaser';\n\nexport class GameOverScene extends Phaser.Scene {\n  constructor() {\n    super('GameOverScene');\n  }\n\n  create(data: { result: 'win' | 'lose' }) {\n    const message = data.result === 'win' ? 'You win!' : 'Time is up!';\n    this.add.text(240, 300, message, { color: '#ffffff', fontSize: '32px' }).setOrigin(0.5);\n    this.add.text(240, 360, 'Click to play again', { color: '#ffffff' }).setOrigin(0.5);\n    this.input.once('pointerdown', () => this.scene.start('GameScene'));\n  }\n}\n",
-      "reason": "T3: game over scene with the result message and a restart click"
-    },
-    {
-      "path": "src/main.ts",
       "operation": "update",
-      "content": "import * as Phaser from 'phaser';\nimport { StartScene } from './scenes/StartScene';\nimport { GameScene } from './scenes/GameScene';\nimport { GameOverScene } from './scenes/GameOverScene';\nimport { setupTestHooks } from './testHooks';\n\nconst game = new Phaser.Game({\n  type: Phaser.AUTO,\n  width: 480,\n  height: 640,\n  parent: 'app',\n  backgroundColor: '#1d1d2b',\n  physics: { default: 'arcade', arcade: { debug: false } },\n  scene: [StartScene, GameScene, GameOverScene],\n});\n\nsetupTestHooks(game);\n",
-      "reason": "T3: register GameOverScene"
+      "content": "import * as Phaser from 'phaser';\nimport { hint, title } from '../ui';\n\n// Result screen: the message for the round's result, and a click anywhere starts a new round.\nexport class GameOverScene extends Phaser.Scene {\n  constructor() {\n    super('GameOverScene');\n  }\n\n  create(data: { result?: 'win' | 'lose'; moves?: number }) {\n    title(this, data?.result === 'win' ? 'All pairs found!' : 'Out of moves');\n    hint(this, `Moves: ${data?.moves ?? 0}`, 260);\n    hint(this, 'Click to play again');\n    this.input.once('pointerdown', () => this.scene.start('GameScene'));\n  }\n}\n",
+      "reason": "T2: result screen also shows the number of moves"
     }
   ]
 }

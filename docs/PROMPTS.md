@@ -44,7 +44,7 @@ Writing rules:
 - File-writing prompts (coder, test_writer, fixer) must contain: `do not write files yourself`, `Never use absolute paths, "~", or ".."`, no shell commands, no secrets.
 - The example JSON must validate against the expected output model (enforced by tests).
 
-## Known model behaviour (qwen2.5-coder:14b)
+## Known model behaviour (qwen2.5-coder:14b; since M21b qwen3:30b-a3b — see M21b for its habits)
 
 - It usually wraps JSON in ```` ```json ```` fences despite the instruction → always parse with `agents.llm.extract_json` / `parse_model` (handles fences and surrounding prose).
 - In code inside JSON strings it sometimes writes JS escapes such as `\'` (`'player\'s'`) or `\d`, which are invalid JSON; the repair call usually repeats them. `extract_json` keeps their backslash (`fix_invalid_escapes`: `\'` → `\\'`), which is exactly the code the model meant. Found in M14 as the cause of an intermittent test_writer failure in the real e2e run.

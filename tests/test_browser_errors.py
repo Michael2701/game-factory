@@ -117,13 +117,14 @@ class RealBrowserErrorTest(unittest.TestCase):
         result = apply_changes(template_changes("boom", "Boom"), target, apply=True, root=self.root)
         self.assertTrue(result.ok, result.summary())
         scene = self.root / target / "src/scenes/GameScene.ts"
-        scene.write_text(scene.read_text().replace("    this.result = null;\n",
-                                                   "    this.result = null;\n    this.time.delayedCall(0, () => { throw new Error('boom in game loop'); });\n", 1))
+        # Thrown from a timer before Phaser reaches the start scene: every smoke test sees it (M21b: a
+        # delayedCall(0) in GameScene.create raced the end of the short smoke tests and was flaky).
+        scene.write_text(scene.read_text() + "\nsetTimeout(() => { throw new Error('boom in game loop'); }, 0);\n")
         checks = test_runner.run_project_checks(target, root=self.root)
         self.assertEqual(checks.status, "failed", checks.summary)
         text = "\n".join(f.message for f in checks.failures)
         self.assertIn("Browser errors:", text)
-        self.assertIn("boom in game loop", text)  # uncaught in the game loop: only the fixture sees it
+        self.assertIn("boom in game loop", text)  # uncaught outside the test code: only the fixture sees it
         self.assertIn("src/scenes/GameScene.ts:", text)  # mapped from the bundle via the source map
         self.assertFalse((self.root / target / "dist/assets").exists() and not any(
             p.suffix == ".map" for p in (self.root / target / "dist/assets").iterdir()))

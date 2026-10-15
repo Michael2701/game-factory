@@ -146,7 +146,7 @@ class NextActionsTest(GateRoot):
         cases = {
             "approve": ["npm run build", f"{TARGET}/dist/"],
             "needs_changes": ["requested: add a restart key", f"run_fix_loop.py --project-dir {TARGET}",
-                              "not passed to the fixer automatically"],
+                              "--from-decision"],
             "reject": [f"the project stays in {TARGET}/", "--fix-loop"],
         }
         for decision, needles in cases.items():

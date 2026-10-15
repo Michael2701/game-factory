@@ -36,15 +36,23 @@ from agents.game_factory_graph import (  # noqa: E402
     format_loop,
     format_review,
     gate_passed,
+    open_run_log,
+    project_hashes,
     run_fix_loop,
 )
 from agents.llm import make_llm, model_name  # noqa: E402
 from agents.nodes.applier import check_fix_target, check_target  # noqa: E402
-from agents.nodes.human_gate import GATE_STATUSES, format_gate  # noqa: E402
+from agents.nodes.human_gate import (  # noqa: E402
+    GATE_STATUSES,
+    format_gate,
+    human_review_failure,
+    load_state,
+    saved_spec_and_plan,
+)
 from agents.schemas import FactoryStatus, FileChange, GameFactoryState  # noqa: E402
 from agents.schemas.examples import sample_game_spec, sample_task_plan  # noqa: E402
 from agents.tools.apply_changes import apply_changes  # noqa: E402
-from agents.tools.filesystem import PROJECT_SKIP, file_hashes, read_project  # noqa: E402
+from agents.tools.filesystem import PROJECT_SKIP, read_project  # noqa: E402
 from agents.tools.safety import SafetyError  # noqa: E402
 
 
@@ -70,15 +78,23 @@ def main(argv: list[str], llm=None, root: Path = ROOT) -> int:
     parser.add_argument("--target-dir", help="where to write --case (default generated/fix-demo-<case>)")
     parser.add_argument("--max-fix-attempts", type=int, default=5)
     parser.add_argument("--json", action="store_true", help="print the final GameFactoryState as JSON")
-    parser.add_argument("--model", help="Ollama model (default: $GAME_FACTORY_MODEL or qwen2.5-coder:14b)")
+    parser.add_argument("--model", help=f"Ollama model (default: $GAME_FACTORY_MODEL, else .env; now {model_name()})")
+    parser.add_argument("--from-decision", action="store_true",
+                        help="with --project-dir: give the human note of `decide.py changes` to the fixer, then "
+                             "test / review / gate again (M22)")
+    parser.add_argument("--run-id", help="run log folder name below logs/runs/ (default: time + project name); "
+                                         "a run with an injected test LLM is logged only with --run-id")
     args = parser.parse_args(argv[1:])
+    with_log = llm is None or args.run_id is not None
+    if args.from_decision and not args.project_dir:
+        parser.error("--from-decision needs --project-dir")
     if args.target_dir and args.project_dir:
         parser.error("--target-dir is for --case; use --project-dir alone for an existing project")
     if not 0 <= args.max_fix_attempts <= MAX_FIX_ATTEMPTS_LIMIT:
         parser.error(f"--max-fix-attempts must be between 0 and {MAX_FIX_ATTEMPTS_LIMIT}")
 
     case = None
-    before = file_hashes(root)
+    before = project_hashes(root)
     try:
         if args.project_dir:
             target = check_fix_target(args.project_dir, root)
@@ -102,23 +118,57 @@ def main(argv: list[str], llm=None, root: Path = ROOT) -> int:
     if not args.json:
         print(f"=== PROJECT ({label}) ===\n{target}/ · {len(sources_before)} source files"
               + (f" · fixture written ({len(written)} files)" if case else ""))
+    saved = None if case else saved_spec_and_plan(target, root)  # M21c: the project's own spec
+    spec, plan = saved if saved else (sample_game_spec(), sample_task_plan())
+    if not args.json and not case:
+        print(f"spec: {spec.title}" + ("" if saved else " (no saved state: sample spec)"))
     state = GameFactoryState(
         user_idea=f"fix loop on {label}",
-        game_spec=sample_game_spec(),
-        task_plan=sample_task_plan(),
+        game_spec=spec,
+        task_plan=plan,
         target_dir=target,
         changed_files=written,
         max_fix_attempts=args.max_fix_attempts,
         status=FactoryStatus.CHANGES_APPLIED if case else FactoryStatus.TESTING,
     )
+    entry = "test_runner"
+    if args.from_decision:
+        try:
+            saved = load_state(target, root)
+        except (SafetyError, ValueError) as exc:
+            print(f"error: {exc}")
+            return 2
+        decision = saved.human_decision
+        if saved.status != FactoryStatus.NEEDS_CHANGES or not decision or not decision.note:
+            print(f"error: {target} has no 'changes' decision with a note; first run: "
+                  f"python scripts/decide.py --project-dir {target} changes --note \"what to change\"")
+            return 2
+        state = saved.model_copy(update={
+            "test_result": human_review_failure(decision.note), "status": FactoryStatus.TESTS_FAILED,
+            "fix_attempts": 0, "max_fix_attempts": args.max_fix_attempts, "loop_history": [], "fix_records": [],
+            "fix_changes": [], "review_result": None, "human_decision": None, "error": None})
+        entry = "fixer"
+        if not args.json:
+            print(f"human note for the fixer: {decision.note}")
     if llm is None and args.model:
         llm = make_llm(args.model)
     if not args.json:
-        print(f"model: {model_name(args.model)}")
+        print(f"model: {model_name(args.model)}", flush=True)
+    log = None
+    if with_log:  # M21b: live log of nodes and LLM calls (stderr with --json)
+        echo = (lambda line: print(line, file=sys.stderr, flush=True)) if args.json else \
+            (lambda line: print(line, flush=True))
+        try:
+            log = open_run_log(root, args.run_id, Path(target).name, model_name(args.model),
+                               f"fix loop on {target}" + (" (human note)" if args.from_decision else ""), echo=echo)
+        except ValueError as exc:
+            print(f"error: {exc}")
+            return 2
+        echo(f"run log: {log.dir.relative_to(root)}/run.log (LLM calls: llm/; viewer: scripts/show_run.py)")
     start = time.monotonic()
-    state = run_fix_loop(state, llm=llm, root=root)
+    state = run_fix_loop(state, llm=llm, root=root, start=entry, log=log)
     elapsed = time.monotonic() - start
-    after = file_hashes(root)
+    after = project_hashes(root)
     inside, outside = _apply_proof(before, after, target)
     sources = [p for p in inside if not any(skip in p for skip in PROJECT_SKIP)]
 

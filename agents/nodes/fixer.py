@@ -194,7 +194,7 @@ def check_fix(changes: FileChangeSet, relevant: dict[str, str], creatable: list[
         if change.path.endswith(".ts") and not _is_test_file(change.path):
             new_code = "\n".join(added_lines(relevant.get(change.path, ""), content))
             project_code = "\n".join([*(c for p, c in relevant.items() if p.endswith(".ts")), content])
-            errors += phaser_problems(where, new_code, project_code)  # only what the fix adds (M20)
+            errors += phaser_problems(where, new_code, project_code, file_code=content)  # what the fix adds (M20)
         if not exists:
             continue
 
@@ -331,8 +331,11 @@ def attempt_history(state: GameFactoryState) -> list[str]:
     lines = [f"#{s.attempt} {s.step} {s.status}: {s.summary[:300]}" + (f" [{', '.join(s.files)}]" if s.files else "")
              for s in state.loop_history if s.attempt > 0]
     for r in state.fix_records:
-        if r.no_effect:
-            touched = "; ".join(r.lines[:6]) + (" ..." if len(r.lines) > 6 else "")
+        touched = "; ".join(r.lines[:6]) + (" ..." if len(r.lines) > 6 else "")
+        if r.made_worse:  # M21b: the graph undid it, the project is back to the state before it
+            lines.append(f"#{r.attempt} made the tests WORSE and was undone (the files are back as before it); "
+                         f"do not repeat it. It touched: {touched}")
+        elif r.no_effect:
             lines.append(f"#{r.attempt} did NOT change the error ({r.signature[:160]}); it touched: {touched}")
     return lines
 

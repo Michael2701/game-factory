@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 from agents.fixtures.broken_projects import CASES  # noqa: E402
 from agents.nodes.fixer import changed_lines, fix, relevant_files  # noqa: E402
+from agents.nodes.human_gate import saved_spec_and_plan  # noqa: E402
 from agents.nodes.test_runner import run_project_checks  # noqa: E402
 from agents.schemas import NodeError  # noqa: E402
 from agents.schemas.examples import sample_game_spec, sample_task_plan  # noqa: E402
@@ -59,7 +60,9 @@ def main(argv: list[str], llm=None) -> int:
     relevant, creatable = relevant_files(result, files)
     before = file_hashes(ROOT)
     start = time.monotonic()
-    proposal = fix(result, files, sample_game_spec(), sample_task_plan(), llm=llm)
+    saved = saved_spec_and_plan(args.project_dir) if args.project_dir else None  # M21c: the project's own spec
+    spec, plan = saved if saved else (sample_game_spec(), sample_task_plan())
+    proposal = fix(result, files, spec, plan, llm=llm)
     elapsed = time.monotonic() - start
     unchanged = file_hashes(ROOT) == before
 

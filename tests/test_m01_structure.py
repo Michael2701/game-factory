@@ -21,7 +21,8 @@ REQUIRED_DIRS = [
 PACKAGES = ["agents", "agents/nodes", "agents/schemas", "agents/tools"]
 
 # sha256 of agents/smoke_graph.py before Milestone 1; the file must stay untouched.
-SMOKE_GRAPH_SHA256 = "e0ff1d10a2ea82d99209d8b77d7b172e469482b2b4545b497ea8ec154b306b76"
+# M21b: the only change since M1 is the model line (now $GAME_FACTORY_MODEL, the 14b was removed), approved by the user
+SMOKE_GRAPH_SHA256 = "2434b384453e3a72d507a25bab590d90c79ae641c478085f34f32d2e521acaeb"
 
 
 class ProjectStructureTest(unittest.TestCase):

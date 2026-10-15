@@ -33,7 +33,7 @@ from agents.schemas.examples import sample_game_spec   # Block Dodger samples fo
 
 **GameIdea** — `text` 3–500 chars.
 
-**GameSpec** — `title`, `slug` (kebab-case `^[a-z0-9]+(-[a-z0-9]+)*$`), `genre`, `engine` (only `"phaser"`, default), `core_loop`, `scenes: [Scene(name, purpose)]` ≥1, `controls: [Control(input, action)]` ≥1, `win_condition`, `lose_condition`, `test_requirements: [str]` ≥1, `asset_requirements`, `sound_requirements` (default `[]`).
+**GameSpec** — `title`, `slug` (kebab-case `^[a-z0-9]+(-[a-z0-9]+)*$`), `genre`, `engine` (only `"phaser"`, default), `core_loop`, `scenes: [Scene(name, purpose)]` ≥1, `controls: [Control(input, action)]` ≥1, `win_condition`, `lose_condition`, `test_requirements: [str]` ≥1, `asset_requirements`, `sound_requirements` (default `[]`), `quality_requirements` (filled by code, M21b), `playtest` (M21c, written by the planner, checked by code: `player` (null | `{moves_by_itself}`), `inputs` [{input: key name or "Click", expect: player_left/right/up/down | score_up | state_changes}], `moves_on_its_own`, `hud` (time | input | none), `difficulty_ramps`, `round_end` ({by: timer, seconds} | {by: hook})). See `agents/generators/playtest.py`.
 
 **ImplementationTask** — `id` (e.g. `T1`), `title`, `description`, `kind` ∈ `setup | config | code | test_hooks | tests | build | run_tests`, `target_files`, `depends_on` (task ids), `acceptance`.
 

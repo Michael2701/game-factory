@@ -39,8 +39,9 @@ from agents.schemas.examples import sample_game_spec, sample_task_plan, sample_t
 from scripts import new_from_template  # noqa: E402
 
 PINS = {"phaser": "3.90.0", "vite": "8.3.1", "typescript": "6.0.3", "@playwright/test": "1.62.0"}
-EXPECTED_FILES = ["index.html", "package.json", "playwright.config.ts", "src/main.ts", "src/scenes/GameScene.ts",
-                  "src/scenes/StartScene.ts", "src/testHooks.ts", "tests/fixtures.ts", "tests/game.spec.ts",
+EXPECTED_FILES = ["index.html", "package.json", "playwright.config.ts", "src/main.ts", "src/scenes/GameOverScene.ts",
+                  "src/scenes/GameScene.ts",
+                  "src/scenes/StartScene.ts", "src/testHooks.ts", "src/ui.ts", "tests/fixtures.ts", "tests/game.spec.ts",
                   "tsconfig.json", "vite.config.ts"]
 SPEC = sample_game_spec()
 
@@ -75,7 +76,7 @@ class TemplateFilesTest(unittest.TestCase):
         for name in HOOK_CONTRACT:
             self.assertRegex(hooks, rf"\b{name}\b")
         self.assertIn("setupTestHooks(game)", self.files["src/main.ts"])
-        self.assertIn("scene: [StartScene, GameScene]", self.files["src/main.ts"])
+        self.assertIn("scene: [StartScene, GameScene, GameOverScene]", self.files["src/main.ts"])
         # M19 real run: the coder used this.physics.add.* while physics was off -> every scene crashed
         self.assertIn("physics: { default: 'arcade'", self.files["src/main.ts"])
 
@@ -105,8 +106,13 @@ class InstantiateTest(unittest.TestCase):
         files = instantiate("my-game", "My <Game>")
         self.assertEqual(json.loads(files["package.json"])["name"], "my-game")
         self.assertIn("<title>My &lt;Game&gt;</title>", files["index.html"])
-        self.assertEqual({k: v for k, v in files.items() if k not in ("package.json", "index.html")},
-                         {k: v for k, v in template_files().items() if k not in ("package.json", "index.html")})
+        start = files["src/scenes/StartScene.ts"]
+        self.assertIn("title(this, 'My <Game>');", start)  # M22: start screen title + controls hint filled in
+        self.assertIn("hint(this, 'Use the keyboard to play');", start)
+        self.assertNotIn("__GAME_TITLE__", start)
+        changed = ("package.json", "index.html", "src/scenes/StartScene.ts")
+        self.assertEqual({k: v for k, v in files.items() if k not in changed},
+                         {k: v for k, v in template_files().items() if k not in changed})
 
     def test_changes_and_project_base(self):
         changes = template_changes("my-game", "My Game")
@@ -122,7 +128,7 @@ class LocksTest(unittest.TestCase):
         base = instantiate("block-dodger", "Block Dodger")
         bad = change_set(("src/scenes/StartScene.ts", "update", "this.input.once('pointerdown', f);\n"),
                          ("src/scenes/GameScene.ts", "update", "x\n"),
-                         ("src/scenes/GameOverScene.ts", "create", "export class GameOverScene {}\n"),
+                         ("src/scenes/GameOverScene.ts", "update", "export class GameOverScene {}\n"),
                          ("package.json", "update", '{"scripts": {"build": "vite build"}}'))
         errors = check_changes(bad, task, base, ["src/main.ts"], LOCKED_FILES)
         self.assertEqual(len(errors), 1, errors)
@@ -135,7 +141,7 @@ class LocksTest(unittest.TestCase):
             with self.subTest(line=line):
                 changes = change_set(("src/scenes/StartScene.ts", "update", line + "\n"),
                                      ("src/scenes/GameScene.ts", "update", "x\n"),
-                                     ("src/scenes/GameOverScene.ts", "create", "x\n"))
+                                     ("src/scenes/GameOverScene.ts", "update", "x\n"))
                 errors = check_changes(changes, task, instantiate("b", "B"))
                 self.assertTrue(any("import * as Phaser" in e for e in errors), errors)
 
@@ -156,10 +162,9 @@ class FinalProjectTest(unittest.TestCase):
     def test_final_changes_include_template(self):
         state = GameFactoryState(user_idea="x", game_spec=SPEC, template=DEFAULT_TEMPLATE, proposed_changes=[
             FileChange(path="src/scenes/GameScene.ts", operation="update", content="game\n", reason="r"),
-            FileChange(path="src/scenes/GameOverScene.ts", operation="create", content="over\n", reason="r")])
+            FileChange(path="src/scenes/GameOverScene.ts", operation="update", content="over\n", reason="r")])
         files = {c.path: c.content for c in final_changes(state)}
-        self.assertEqual(sorted(files), sorted([*EXPECTED_FILES, "src/scenes/GameOverScene.ts",
-                                                "tests/acceptance.spec.ts"]))  # M21: written by code from the spec
+        self.assertEqual(sorted(files), sorted([*EXPECTED_FILES, "tests/acceptance.spec.ts"]))  # M21: by code
         self.assertIn("page.keyboard.down('ArrowLeft')", files["tests/acceptance.spec.ts"])
         self.assertEqual(files["src/scenes/GameScene.ts"], "game\n")
         self.assertEqual(files["playwright.config.ts"], template_files()["playwright.config.ts"])

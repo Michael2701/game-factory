@@ -9,10 +9,11 @@ testable scaffold, not a game: `agents/generators/phaser_template.py` instantiat
 - **Locked** for the coder and the task decomposer: `package.json`, `index.html`,
   `tsconfig.json`, `playwright.config.ts`.
 - `src/main.ts` enables Arcade Physics (`this.physics` works in every scene).
-- Agents update: `src/main.ts` (register scenes), `src/scenes/StartScene.ts`,
-  `src/scenes/GameScene.ts` (placeholders), `src/testHooks.ts`; they create further scenes.
-- Test hook contract: `window.__GAME_STATE__.scene` / `.result` ('win' | 'lose' | null),
-  `window.__TEST_API__.startGame()` / `.skipTime(seconds)`.
+- Agents update: `src/main.ts` (register scenes), `src/scenes/GameScene.ts` (placeholder),
+  `src/testHooks.ts`; StartScene and GameOverScene are finished screens they may extend.
+- Test hook contract (generic, M21c): `window.__GAME_STATE__` scene / result / player / score /
+  difficulty / clickTarget / texts / objects (read from GameScene members when the game has them),
+  `window.__TEST_API__.startGame()` / `.skipTime(seconds)` / `.finishRound(result)`.
 - `tests/game.spec.ts` holds 3 smoke tests of that contract; the test writer replaces it.
 
 Check it: `python scripts/new_from_template.py --target generated/template-check --check`.

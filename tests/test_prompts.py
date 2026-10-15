@@ -26,7 +26,8 @@ SECTIONS = ["## Role", "## Input", "## Rules", "## Output format", "## Example o
 EXPECTED_VARIABLES = {
     "planner": {"idea", "schema"},
     "task_decomposer": {"game_spec", "project_base", "schema"},
-    "coder": {"task", "game_spec", "allowed_paths", "optional_paths", "locked_paths", "existing_files", "schema"},
+    "coder": {"task", "game_spec", "allowed_paths", "optional_paths", "locked_paths", "existing_files", "playtest",
+              "schema"},
     "test_writer": {"game_spec", "project_files", "schema"},
     "fixer": {"test_result", "project_tree", "relevant_files", "new_files", "game_spec", "task_plan", "fix_attempt",
               "max_fix_attempts", "previous_attempts", "schema"},
@@ -49,7 +50,8 @@ OUTPUT_MODEL = {
 SCHEMA_MODEL = {**OUTPUT_MODEL, "repair": GameSpec}
 
 REVIEW_CHECKS = ["scope_small", "testable", "test_hooks_present", "browser_game_suitable",
-                 "no_obvious_ux_issues", "files_organized"]
+                 "no_obvious_ux_issues", "files_organized",
+                 "hud_visible", "difficulty_ramps", "feedback_on_events", "start_screen_explains_controls"]  # M22
 
 
 def sample_variables(name: str) -> dict:
@@ -67,6 +69,7 @@ def sample_variables(name: str) -> dict:
         "project_base": "The project starts from the Phaser + Vite template.",
         "existing_files": files,
         "project_files": files,
+        "playtest": "- the start screen must show the title;",
         "relevant_files": files,
         "new_files": ["playwright.config.ts"],
         "project_tree": ["index.html", "src/main.ts"],
@@ -175,9 +178,9 @@ class RenderTest(unittest.TestCase):
 @unittest.skipUnless(os.environ.get("RUN_OLLAMA_TESTS") == "1", "set RUN_OLLAMA_TESTS=1 (needs `ollama serve`)")
 class PlannerPromptLLMTest(unittest.TestCase):
     def test_planner_prompt_yields_valid_game_spec(self):
-        from langchain_ollama import ChatOllama
+        from agents.llm import make_llm
 
-        llm = ChatOllama(model="qwen2.5-coder:14b", temperature=0.2)
+        llm = make_llm()
         prompt = render_prompt("planner", **sample_variables("planner"))
         reply = llm.invoke(prompt).content
         spec = GameSpec.model_validate_json(extract_json(reply))

@@ -25,7 +25,7 @@ Build a local LangGraph-based agent system that can take a short game idea and a
 | Layer | Tools |
 |---|---|
 | Agent system | Python 3.14, LangGraph, LangChain, langchain-ollama, Pydantic |
-| Local LLM | Ollama, `qwen2.5-coder:14b` |
+| Local LLM | Ollama, model from `.env` (`GAME_FACTORY_MODEL`, default `qwen3:30b-a3b`) |
 | Generated games | TypeScript, Phaser, Vite |
 | Game tests | Playwright |
 | Tooling | Git, Node.js / npm |
@@ -53,7 +53,9 @@ Build a local LangGraph-based agent system that can take a short game idea and a
 - **Milestone 19 — Phaser Template as Agent Output Target:** complete.
 - **Milestone 20 — First Real Generated Game Validation:** complete with a partial result.
 - **M21 — Playable generated game (after the roadmap):** complete. An independent acceptance test (real click + arrow keys), browser-error capture with source maps, fixer anti-repeat, configurable model; qwen2.5-coder:32b generated a Block Dodger that passes 11/11 tests on the first try.
-- **M22 — Quality bar:** in progress (see [docs/ROADMAP.md](docs/ROADMAP.md) for the live status).
+- **M21b — Quality bar, run log, fix-loop hardening:** complete as infrastructure (quality checks, live run log with the model's reasoning, token/time limits, revert of worsening fixes, deterministic Phaser checks); runs r10–r13 partial ([report](docs/milestones/M21b-quality-bar.md)).
+- **M21c — Game-agnostic factory:** in progress — every game gets its own playtest plan and acceptance test from its description ([report](docs/milestones/M21c-game-agnostic.md)).
+- **Next:** [plan-2.md](plan-2.md) M22–M36 — backend, Studio, asset management, public games portal.
 - Existing: Python venv with LangGraph stack, `agents/smoke_graph.py` (a two-node LangGraph planner → reviewer smoke test against Ollama).
 - Pydantic schemas in `agents/schemas/` ([docs/SCHEMAS.md](docs/SCHEMAS.md)); check them with `python scripts/validate_schemas.py`.
 - Prompt templates for all agent roles in `agents/prompts/` ([docs/PROMPTS.md](docs/PROMPTS.md)).
@@ -79,7 +81,7 @@ Prerequisites: Python 3.14, [Ollama](https://ollama.com), Node.js + npm, Git.
 
 ```bash
 # 1. Pull the local model (once)
-ollama pull qwen2.5-coder:14b
+ollama pull qwen3:30b-a3b   # or set GAME_FACTORY_MODEL in .env (see .env.example)
 
 # 2. Make sure the Ollama server is running
 ollama serve            # or run the Ollama desktop app

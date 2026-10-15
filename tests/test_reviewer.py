@@ -132,7 +132,7 @@ class CheckReviewTest(unittest.TestCase):
         self.assertEqual(self.errors(review_json("needs_changes", failed=("testable",)), TESTS_FAILED), [])
 
     def test_prompt_example_passes(self):
-        files = {**BASE_FILES, "src/scenes/BasketScene.ts": "export class BasketScene {}\n",
+        files = {**BASE_FILES, "src/scenes/WordScene.ts": "export class WordScene {}\n",
                  "src/hooks.ts": "export {};\n"}
         self.assertEqual(check_review(parse(example_json()), review_facts(files, PASSED), files), [])
 

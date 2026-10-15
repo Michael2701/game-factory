@@ -122,11 +122,21 @@ class HookContractTest(unittest.TestCase):
         partial = "(window as any).__TEST_API__ = { skipTime(s: number) {} };"
         errors = check_changes(FileChangeSet.model_validate_json(reply(change("src/testHooks.ts", partial))),
                                self.T5, {})
-        self.assertTrue(any("missing ['__GAME_STATE__', 'scene', 'result', 'playerX', 'startGame']" in e for e in errors), errors)
+        self.assertTrue(any("missing ['__GAME_STATE__', 'scene', 'result', 'texts', 'objects', 'startGame', "
+                            "'finishRound']" in e for e in errors), errors)
+
+    def test_contract_follows_the_playtest(self):
+        # M21c: the dodger's playtest has an avatar and a difficulty ramp, so its hooks need player + difficulty
+        base = ("(window as any).__GAME_STATE__ = { scene: 'GameScene', result: null, texts: [], objects: [] };\n"
+                "(window as any).__TEST_API__ = { startGame() {}, skipTime(seconds: number) {}, finishRound(r: string) {} };")
+        changes = FileChangeSet.model_validate_json(reply(change("src/testHooks.ts", base)))
+        self.assertEqual(check_changes(changes, self.T5, {}), [])  # no spec: only the generic contract
+        errors = check_changes(changes, self.T5, {}, spec=SPEC)
+        self.assertTrue(any("missing ['player', 'difficulty']" in e for e in errors), errors)
 
     def test_contract_satisfied(self):
-        full = ("(window as any).__GAME_STATE__ = { scene: 'GameScene', result: null, playerX: 240 };\n"
-                "(window as any).__TEST_API__ = { startGame() {}, skipTime(seconds: number) {} };")
+        full = ("(window as any).__GAME_STATE__ = { scene: 'GameScene', result: null, player: { x: 240, y: 600 }, difficulty: 1, texts: [], objects: [] };\n"
+                "(window as any).__TEST_API__ = { startGame() {}, skipTime(seconds: number) {}, finishRound(result: string) {} };")
         raw = reply(change("src/testHooks.ts", full))
         self.assertEqual(check_changes(FileChangeSet.model_validate_json(raw), self.T5, {}), [])
 

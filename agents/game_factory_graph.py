@@ -49,24 +49,27 @@ from langgraph.graph import END, START, StateGraph  # noqa: E402
 
 from agents.generators.phaser_template import DEFAULT_TEMPLATE  # noqa: E402
 from agents.llm import make_llm, model_name  # noqa: E402
+from agents.run_log import LOG_DIR, RunLog, Timer, active, new_run_id, run_dir  # noqa: E402
 from agents.nodes.applier import (  # noqa: E402
     TARGET_REFUSED,
     apply_fix_node,
     apply_node,
     check_target,
     default_target,
+    write_manifest,
 )
 from agents.nodes.coder import coder_dry_run_node  # noqa: E402
 from agents.nodes.fixer import failure_signature, fixer_node  # noqa: E402
 from agents.nodes.human_gate import GATE_STATUSES, format_gate, human_gate_node  # noqa: E402
 from agents.nodes.planner import planner_node  # noqa: E402
-from agents.nodes.reviewer import reviewer_node  # noqa: E402
+from agents.nodes.reviewer import ACCEPTANCE_ORDER, QUALITY_FAILURE, TESTS_COUNT, reviewer_node  # noqa: E402
 from agents.nodes.task_decomposer import task_decomposer_node  # noqa: E402
 from agents.nodes.test_runner import test_runner_node  # noqa: E402
 from agents.nodes.test_writer import test_writer_dry_run_node  # noqa: E402
-from agents.schemas import FactoryStatus, GameFactoryState, LoopStep  # noqa: E402
+from agents.schemas import FactoryStatus, FileChange, GameFactoryState, LoopStep, TestResult  # noqa: E402
 from agents.schemas.examples import BLOCK_DODGER_IDEA  # noqa: E402
-from agents.tools.filesystem import PROJECT_SKIP, file_hashes  # noqa: E402
+from agents.tools.apply_changes import apply_changes  # noqa: E402
+from agents.tools.filesystem import PROJECT_SKIP, file_hashes, read_file  # noqa: E402
 from agents.tools.safety import PROJECT_ROOT, SafetyError  # noqa: E402
 
 
@@ -89,9 +92,38 @@ def _record(state: GameFactoryState, update: dict, step: LoopStep) -> dict:
     return {**update, "loop_history": [*state.loop_history, step]}
 
 
-def _short(text: str | None) -> str:
+def _short(text: str | None, limit: int = STEP_SUMMARY_CHARS) -> str:
     text = " ".join((text or "").split())
-    return text if len(text) <= STEP_SUMMARY_CHARS else text[:STEP_SUMMARY_CHARS - 1] + "…"
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def acceptance_stage(result: TestResult) -> int:
+    """How far the acceptance test got (M21b): its steps run in ACCEPTANCE_ORDER and stop at the first
+    failure. len(ACCEPTANCE_ORDER) = passed (or no acceptance failure); index of the failed [step];
+    -1 = it failed without a step tag (TypeError, timeout: worse than any tagged step); -2 = no tests ran."""
+    if result.status == "passed":
+        return len(ACCEPTANCE_ORDER)
+    if not TESTS_COUNT.search(result.summary):
+        return -2
+    failures = [f for f in result.failures if "acceptance.spec.ts" in f.name]
+    if not failures:
+        return len(ACCEPTANCE_ORDER)
+    tags = [tag for tag, _ in QUALITY_FAILURE.findall(failures[0].message)]
+    return ACCEPTANCE_ORDER.index(tags[0]) if tags else -1
+
+
+def test_rank(result: TestResult) -> tuple[int, int, int]:
+    """(build ok, acceptance progress, tests passed) for comparing two runs of the same project; higher is
+    better (M21b). Progress comes before the count: a fix that gets the acceptance test further is kept
+    even when another test now fails (r12 fix #2: [controls] -> [hud_visible], 3/6 -> 2/6)."""
+    count = TESTS_COUNT.search(result.summary)
+    return (int(result.status == "passed" or "build ok" in result.summary), acceptance_stage(result),
+            int(count.group(1)) if count else -1)
+
+
+def made_worse(result: TestResult, baseline: TestResult) -> bool:
+    """The run after a fix is worse than the run before it: the build broke or fewer tests pass."""
+    return result.status != "passed" and test_rank(result) < test_rank(baseline)
 
 
 def _test_step(state: GameFactoryState, root: Path) -> dict:
@@ -101,8 +133,50 @@ def _test_step(state: GameFactoryState, root: Path) -> dict:
     if (records and records[-1].attempt == state.fix_attempts and result.status == "failed"
             and failure_signature(result) == records[-1].signature):  # the last fix changed nothing (M21)
         update = {**update, "fix_records": [*records[:-1], records[-1].model_copy(update={"no_effect": True})]}
-    return _record(state, update, LoopStep(step="test", attempt=state.fix_attempts, status=result.status,
-                                           summary=result.summary))
+    update = {**update, "fix_backup": [], "fix_baseline": None}
+    test = LoopStep(step="test", attempt=state.fix_attempts, status=result.status, summary=result.summary)
+    baseline = state.fix_baseline
+    if not (state.fix_backup and baseline and update.get("status") != FactoryStatus.ERROR
+            and made_worse(result, baseline)):
+        return _record(state, update, test)
+    # M21b: the last fix made things worse -> put the files back, keep testing from the baseline
+    files = [c.path for c in state.fix_backup]
+    reverted = apply_changes(state.fix_backup, state.target_dir, apply=True, root=root)
+    if not reverted.ok:
+        step = LoopStep(step="revert", attempt=state.fix_attempts, status="error", files=files,
+                        summary=_short(f"could not revert: {reverted.summary()}"))
+        return {**update, "loop_history": [*state.loop_history, test, step]}
+    write_manifest(state.target_dir, "revert", root)
+    records = update.get("fix_records", records)
+    if records and records[-1].attempt == state.fix_attempts:  # no line blocking: an exact repeat stays refused
+        records = [*records[:-1], records[-1].model_copy(update={"no_effect": False, "made_worse": True})]
+    first = f" (first failure: {result.failures[0].name}: {result.failures[0].message})" if result.failures else ""
+    step = LoopStep(step="revert", attempt=state.fix_attempts, status="reverted", files=files,
+                    summary=_short(f"{result.summary}{first} is worse than before the fix ({baseline.summary}); "
+                                   "the fix was undone", 400))
+    return {**update, "test_result": baseline, "status": FactoryStatus.TESTS_FAILED, "fix_records": records,
+            "loop_history": [*state.loop_history, test, step]}
+
+
+def _fix_backup(state: GameFactoryState, root: Path) -> list[FileChange]:
+    """Changes that undo `state.fix_changes`: the old content of each file, or a delete for a new one.
+
+    [] (no revert possible) when an existing file cannot be read: never turn it into a delete.
+    """
+    backup = []
+    for change in state.fix_changes:
+        reason = f"revert fix attempt {state.fix_attempts}"
+        path = f"{state.target_dir}/{change.path}"
+        if not (Path(root) / path).exists():
+            if change.operation != "delete":
+                backup.append(FileChange(path=change.path, operation="delete", reason=reason))
+            continue
+        try:
+            backup.append(FileChange(path=change.path, operation="update", content=read_file(path, root),
+                                     reason=reason))
+        except (SafetyError, OSError, ValueError):
+            return []
+    return backup
 
 
 def _failed_attempt(update: dict) -> dict:
@@ -125,7 +199,10 @@ def _fix_step(state: GameFactoryState, llm, root: Path) -> dict:
 
 
 def _apply_fix_step(state: GameFactoryState, root: Path) -> dict:
+    backup = _fix_backup(state, root) if state.target_dir else []
     update = apply_fix_node(state, root=root)
+    if update["status"] != FactoryStatus.ERROR:  # M21b: remember how to undo it and what it is measured against
+        update = {**update, "fix_backup": backup, "fix_baseline": state.test_result}
     if update["status"] == FactoryStatus.ERROR:
         step = LoopStep(step="apply_fix", attempt=state.fix_attempts, status="error", summary=_short(update["error"]))
         update = _failed_attempt(update)  # all-or-nothing: nothing was written
@@ -201,11 +278,14 @@ def build_graph(llm=None, apply: bool = False, root: Path = PROJECT_ROOT, fix_lo
     return graph.compile()
 
 
-def build_fix_loop_graph(llm=None, root: Path = PROJECT_ROOT):
-    """START -> test_runner -> fix loop -> reviewer -> human_gate, for an already written project (state.target_dir)."""
+def build_fix_loop_graph(llm=None, root: Path = PROJECT_ROOT, start: str = "test_runner"):
+    """START -> test_runner -> fix loop -> reviewer -> human_gate, for an already written project (state.target_dir).
+
+    `start="fixer"` (M22) begins with a fix for `state.test_result`, e.g. a human's "changes" note.
+    """
     graph = StateGraph(GameFactoryState)
     _add_fix_loop(graph, llm, root)
-    graph.add_edge(START, "test_runner")
+    graph.add_edge(START, start)
     return graph.compile()
 
 
@@ -215,22 +295,91 @@ def _to_state(out: dict) -> GameFactoryState:
     )
 
 
+def _clip(text: str, limit: int = 160) -> str:
+    text = " ".join(str(text).split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def summarize_update(update: dict, state: dict) -> str:
+    """Short run-log line for what one node changed (M21b); `state` is the merged state after it."""
+    get = lambda v, k, d=None: getattr(v, k, None) if not isinstance(v, dict) else v.get(k, d)  # noqa: E731
+    parts = []
+    if (spec := update.get("game_spec")) is not None:
+        parts.append(f'spec "{get(spec, "title")}" ({len(get(spec, "scenes") or [])} scenes, '
+                     f'{len(get(spec, "controls") or [])} controls, {len(get(spec, "quality_requirements") or [])} quality req)')
+    if (plan := update.get("task_plan")) is not None:
+        tasks = get(plan, "tasks") or []
+        parts.append(f"{len(tasks)} tasks: " + ", ".join(f"{get(t, 'id')} {get(t, 'title')}" for t in tasks))
+    for key, label in (("proposed_changes", "code"), ("proposed_test_changes", "tests"), ("fix_changes", "fix")):
+        if update.get(key):
+            paths = [get(c, "path") for c in update[key]]
+            parts.append(f"{label}: {len(paths)} files ({', '.join(paths)})")
+    if update.get("changed_files"):
+        parts.append(f"wrote {len(update['changed_files'])} files")
+    history = update.get("loop_history") or []
+    reverted = bool(history) and get(history[-1], "step") == "revert"
+    if (result := update.get("test_result")) is not None and not reverted:  # after a revert: the baseline
+        failures = get(result, "failures") or []
+        first = f" · first failure: {get(failures[0], 'name')}: {get(failures[0], 'message')}" if failures else ""
+        parts.append(f"{get(result, 'status')}: {get(result, 'summary')}{first}")
+    if (review := update.get("review_result")) is not None:
+        failed = [get(c, "name") for c in get(review, "checks") or [] if not get(c, "passed")]
+        parts.append(f"verdict {get(review, 'verdict')}" + (f", failed checks: {', '.join(failed)}" if failed
+                                                             else ", all checks passed"))
+    if "fix_attempts" in update:
+        parts.append(f"fix attempt {update['fix_attempts']}/{state.get('max_fix_attempts')}")
+    if reverted:
+        parts.append(f"REVERT ({get(history[-1], 'status')}): {get(history[-1], 'summary')}")
+    status = update.get("status", state.get("status"))
+    parts.append(f"→ {getattr(status, 'value', status)}")
+    if update.get("error"):
+        parts.append(f"error: {update['error']}")
+    return _clip(" · ".join(str(p) for p in parts), 600)
+
+
+def _invoke(graph, state: dict | GameFactoryState, config: dict, log: RunLog | None) -> GameFactoryState:
+    """graph.invoke, or (with a run log) graph.stream with one `node` event per finished node."""
+    if log is None:
+        return _to_state(graph.invoke(state, config=config))
+    merged, timer = dict(state), Timer()  # a GameFactoryState iterates as (field, value) pairs
+    with active(log):
+        for chunk in graph.stream(state, config=config, stream_mode="updates"):
+            for node, update in chunk.items():
+                update = update or {}
+                merged.update(update)
+                log.event("node", node=node, duration_s=round(timer.lap(), 1), summary=summarize_update(update, merged),
+                          status=str(getattr(merged.get("status"), "value", merged.get("status"))))
+    final = _to_state(merged)
+    log.event("end", status=final.status.value, error=final.error, duration_s=round(timer.total(), 1),
+              target_dir=final.target_dir)
+    return final
+
+
 def run(idea: str, llm=None, apply: bool = False, target_dir: str | None = None,
         root: Path = PROJECT_ROOT, fix_loop: bool = False, max_fix_attempts: int = 5,
-        template: str | None = DEFAULT_TEMPLATE) -> GameFactoryState:
-    """`template=None` builds the project from scratch (pre-M19 behaviour)."""
+        template: str | None = DEFAULT_TEMPLATE, log: RunLog | None = None) -> GameFactoryState:
+    """`template=None` builds the project from scratch (pre-M19 behaviour). `log` (M21b): run log."""
     graph = build_graph(llm, apply=apply, root=root, fix_loop=fix_loop)
-    out = graph.invoke({"user_idea": idea, "target_dir": target_dir, "max_fix_attempts": max_fix_attempts,
-                        "template": template},
-                       config={"recursion_limit": recursion_limit(max_fix_attempts)})
-    return _to_state(out)
+    return _invoke(graph, {"user_idea": idea, "target_dir": target_dir, "max_fix_attempts": max_fix_attempts,
+                           "template": template},
+                   {"recursion_limit": recursion_limit(max_fix_attempts)}, log)
 
 
-def run_fix_loop(state: GameFactoryState, llm=None, root: Path = PROJECT_ROOT) -> GameFactoryState:
+def run_fix_loop(state: GameFactoryState, llm=None, root: Path = PROJECT_ROOT,
+                 start: str = "test_runner", log: RunLog | None = None) -> GameFactoryState:
     """Run test_runner + fix loop + review + gate on `state.target_dir` (needs game_spec; task_plan optional)."""
-    out = build_fix_loop_graph(llm, root=root).invoke(
-        state, config={"recursion_limit": recursion_limit(state.max_fix_attempts, prefix_nodes=0)})
-    return _to_state(out)
+    graph = build_fix_loop_graph(llm, root=root, start=start)
+    return _invoke(graph, state, {"recursion_limit": recursion_limit(state.max_fix_attempts, prefix_nodes=0)},
+                   log)
+
+
+def open_run_log(root: Path, run_id: str | None, label: str, model: str, what: str,
+                 echo=None) -> RunLog:
+    """Create logs/runs/<run_id>/ (default id: time + label) and log the `start` event."""
+    run_id = run_id or new_run_id(label)
+    log = RunLog(run_dir(root, run_id), echo=echo)
+    log.event("start", run_id=run_id, model=model, what=what)
+    return log
 
 
 def _format_changes(changes, show_files: bool) -> list[str]:
@@ -328,6 +477,11 @@ def gate_passed(state: GameFactoryState) -> bool:
             and state.test_result is not None and state.test_result.status == "passed")
 
 
+def project_hashes(root: Path) -> dict[str, str]:
+    """file_hashes(root) without the run logs (M21b), which every logged run writes below logs/runs/."""
+    return {path: digest for path, digest in file_hashes(root).items() if not path.startswith(f"{LOG_DIR}/")}
+
+
 def _apply_proof(before: dict[str, str], after: dict[str, str], target: str | None) -> tuple[list[str], list[str]]:
     """Paths created/changed/removed between two snapshots: (inside target, outside target)."""
     diff = sorted(p for p in before.keys() | after.keys() if before.get(p) != after.get(p))
@@ -347,10 +501,13 @@ def main(argv: list[str], llm=None, root: Path = PROJECT_ROOT) -> int:
                         help="--apply, then test and fix in a loop until tests pass or attempts run out")
     parser.add_argument("--max-fix-attempts", type=int, help="fix loop budget (default 5); requires --fix-loop")
     parser.add_argument("--target-dir", help="apply target (default generated/<slug>); requires --apply")
-    parser.add_argument("--model", help="Ollama model for every LLM node (default: $GAME_FACTORY_MODEL or "
-                                        "qwen2.5-coder:14b)")
+    parser.add_argument("--model", help="Ollama model for every LLM node (default: $GAME_FACTORY_MODEL, "
+                                        f"else .env; now {model_name()})")
+    parser.add_argument("--run-id", help=f"run log folder name below {LOG_DIR}/ (default: time + slug); "
+                                         "a run with an injected test LLM is logged only with --run-id")
     args = parser.parse_args(argv[1:])
     args.apply = args.apply or args.fix_loop
+    with_log = llm is None or args.run_id is not None
     if args.target_dir and not args.apply:
         parser.error("--target-dir requires --apply")
     if args.max_fix_attempts is not None and not args.fix_loop:
@@ -369,11 +526,23 @@ def main(argv: list[str], llm=None, root: Path = PROJECT_ROOT) -> int:
     if llm is None and args.model:
         llm = make_llm(args.model)
     if not args.json:
-        print(f"model: {model_name(args.model)}" + (" (injected)" if llm is not None and not args.model else ""))
-    before = file_hashes(root)
+        print(f"model: {model_name(args.model)}" + (" (injected)" if llm is not None and not args.model else ""),
+              flush=True)
+    before = project_hashes(root)
+    log = None
+    if with_log:  # M21b: what the agents do, while they do it (stderr with --json: stdout stays JSON)
+        echo = (lambda line: print(line, file=sys.stderr, flush=True)) if args.json else \
+            (lambda line: print(line, flush=True))
+        try:
+            log = open_run_log(root, args.run_id, Path(args.target_dir).name if args.target_dir else "run",
+                               model_name(args.model), args.idea, echo=echo)
+        except ValueError as exc:
+            print(f"error: {exc}")
+            return 2
+        echo(f"run log: {log.dir.relative_to(root)}/run.log (LLM calls: llm/; viewer: scripts/show_run.py)")
     state = run(args.idea, llm=llm, apply=args.apply, target_dir=args.target_dir, root=root,
-                fix_loop=args.fix_loop, max_fix_attempts=max_fix_attempts)
-    after = file_hashes(root)
+                fix_loop=args.fix_loop, max_fix_attempts=max_fix_attempts, log=log)
+    after = project_hashes(root)
     inside, outside = _apply_proof(before, after, state.target_dir if args.apply else None)
     if args.json:
         print(state.model_dump_json(indent=2, exclude_none=True))

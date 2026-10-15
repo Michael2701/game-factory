@@ -29,13 +29,19 @@ from agents import game_factory_graph as gfg  # noqa: E402
 from agents.fixtures.broken_projects import BASE_FILES, CASES  # noqa: E402
 from agents.nodes import test_runner  # noqa: E402
 from agents.nodes.applier import FIX_NODE, apply_fix_node, check_fix_target  # noqa: E402
-from agents.schemas import FactoryStatus, FileChange, GameFactoryState, TestResult  # noqa: E402
+from agents.schemas import FactoryStatus, FileChange, GameFactoryState, TestFailure, TestResult  # noqa: E402
 from agents.schemas.examples import sample_game_spec, sample_task_plan  # noqa: E402
 from agents.tools.safety import SafetyError  # noqa: E402
 from fakes import FakeLLM  # noqa: E402
 from scripts import run_fix_loop  # noqa: E402
 from test_graph import ALL_REPLIES, MAIN_V2, run_main  # noqa: E402
-from test_reviewer import APPROVE, NEEDS_CHANGES, REJECT_BUILD  # noqa: E402
+from test_reviewer import APPROVE, NEEDS_CHANGES, REJECT_BUILD, review_json  # noqa: E402
+
+# M22: the fake template games have no flash/shake, so the reviewer must fail feedback_on_events
+NO_FEEDBACK = review_json("needs_changes", failed=("feedback_on_events",))
+# no test ran: the acceptance proved nothing, so the quality checks must be "not verified" (M21b)
+UNVERIFIED = review_json("needs_changes", failed=("hud_visible", "difficulty_ramps", "feedback_on_events",
+                                                  "start_screen_explains_controls"))
 
 TARGET = "generated/demo"
 FIXED_MAIN = BASE_FILES["src/main.ts"]
@@ -315,6 +321,106 @@ class FixLoopTest(TempRoot):
         self.assertEqual(gfg._after_fix_attempt(state.model_copy(update=update)), gfg.END)
 
 
+WORSE = "export const worse = 1;\n"
+GOOD = "export const good = 1;\n"
+
+
+class ScoreChecks:
+    """Test results by a marker in src/main.ts: none -> 3/4, WORSE -> 0/4, GOOD -> passed (M21b)."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def __call__(self, project_dir, steps=test_runner.STEPS, root=None):
+        self.calls += 1
+        main = (Path(root) / project_dir / "src/main.ts").read_text()
+        if GOOD in main:
+            return TestResult(status="passed", summary="install ok · build ok · tests 4/4 passed")
+        if WORSE in main:
+            return TestResult(status="failed", summary="install ok · build ok · tests 0/4 passed", failures=[
+                TestFailure(name="acceptance.spec.ts › acceptance", message="TypeError: this.time.add is not a "
+                                                                            "function\n    at src/main.ts:3:5")])
+        return TestResult(status="failed", summary="install ok · build ok · tests 3/4 passed", failures=[
+            TestFailure(name="acceptance.spec.ts › acceptance", message="Error: [difficulty_ramps] difficulty "
+                                                                        "stayed 1\n    at src/main.ts:2:1")])
+
+
+class RevertTest(TempRoot):
+    """M21b: a fix that makes the tests worse is undone (r10: 3/4 -> 0/4 after `this.time.add`)."""
+
+    def setUp(self):
+        super().setUp()
+        self.write_case("missing-file")
+        (self.root / TARGET / "src/main.ts").write_text(FIXED_MAIN)
+
+    def test_worse_fix_is_reverted_and_blocked(self):
+        worse = reply(("src/main.ts", "update", FIXED_MAIN + WORSE))
+        good = reply(("src/main.ts", "update", FIXED_MAIN + GOOD))
+        llm = FakeLLM(worse, good, APPROVE)
+        checks = ScoreChecks()
+        with mock.patch.object(test_runner, "run_project_checks", checks):
+            state = gfg.run_fix_loop(self.state(), llm=llm, root=self.root)
+        steps = [(s.attempt, s.step, s.status) for s in state.loop_history]
+        self.assertEqual(steps, [(0, "test", "failed"), (1, "fix", "proposed"), (1, "apply_fix", "applied"),
+                                 (1, "test", "failed"), (1, "revert", "reverted"), (2, "fix", "proposed"),
+                                 (2, "apply_fix", "applied"), (2, "test", "passed")])
+        self.assertIn("0/4 passed (first failure: acceptance.spec.ts › acceptance: TypeError: this.time.add",
+                      state.loop_history[4].summary)  # the NEW result, not the baseline's failure
+        self.assertIn("is worse than before the fix", state.loop_history[4].summary)
+        self.assertTrue(state.fix_records[0].made_worse)
+        self.assertFalse(state.fix_records[0].no_effect)  # its lines stay usable; only the exact repeat is refused
+        self.assertIn("made the tests WORSE and was undone", llm.prompts[1])
+        self.assertIn("[difficulty_ramps]", llm.prompts[1])  # attempt 2 works on the baseline failure again
+        self.assertEqual(self.read("src/main.ts"), FIXED_MAIN + GOOD)
+        self.assertEqual(state.fix_backup, [])
+        self.assertIsNone(state.fix_baseline)
+        manifest = json.loads(self.read(".factory/manifest.json"))
+        self.assertEqual(manifest["written_by"], "apply_fix")  # the last write; the revert wrote one too
+
+    def test_revert_restores_the_files_and_the_baseline_result(self):
+        llm = FakeLLM(reply(("src/main.ts", "update", FIXED_MAIN + WORSE)), REJECT_BUILD)
+        with mock.patch.object(test_runner, "run_project_checks", ScoreChecks()):
+            state = gfg.run_fix_loop(self.state(max_fix_attempts=1), llm=llm, root=self.root)
+        self.assertEqual(self.read("src/main.ts"), FIXED_MAIN)  # back as before the fix
+        self.assertEqual(state.test_result.summary, "install ok · build ok · tests 3/4 passed")
+        manifest = json.loads(self.read(".factory/manifest.json"))
+        self.assertEqual(manifest["written_by"], "revert")
+
+    def test_backup_of_a_new_file_is_a_delete(self):
+        state = self.state().model_copy(update={"fix_changes": [fc("src/main.ts", "update", "x"),
+                                                                fc("src/new.ts", "create", "y")]})
+        backup = gfg._fix_backup(state, self.root)
+        self.assertEqual([(c.path, c.operation) for c in backup], [("src/main.ts", "update"), ("src/new.ts", "delete")])
+        self.assertEqual(backup[0].content, FIXED_MAIN)
+
+    def test_acceptance_progress_beats_the_count(self):
+        def acc(message, summary):
+            return TestResult(status="failed", summary=summary, failures=[
+                TestFailure(name="acceptance.spec.ts › acceptance", message=message)])
+        controls = acc("Error: [controls] ArrowLeft did not move the player", "install ok · build ok · tests 3/6 passed")
+        hud = acc("Error: [hud_visible] the HUD did not change", "install ok · build ok · tests 2/6 passed")
+        difficulty = acc("Error: [difficulty_ramps] difficulty stayed 1", "install ok · build ok · tests 3/4 passed")
+        type_error = acc("TypeError: this.time.add is not a function", "install ok · build ok · tests 0/4 passed")
+        self.assertFalse(gfg.made_worse(hud, controls))  # r12 fix #2: got further -> kept
+        self.assertTrue(gfg.made_worse(controls, hud))
+        self.assertTrue(gfg.made_worse(type_error, difficulty))  # r10 fix #4 -> reverted
+        other = TestResult(status="failed", summary="install ok · build ok · tests 5/6 passed",
+                           failures=[TestFailure(name="game.spec.ts › lose", message="timeout")])
+        self.assertFalse(gfg.made_worse(other, hud))  # acceptance now passes completely
+        self.assertEqual(gfg.acceptance_stage(other), len(gfg.ACCEPTANCE_ORDER))
+
+    def test_ranking(self):
+        def r(status, summary):
+            return TestResult(status=status, summary=summary)
+        base = r("failed", "install ok · build ok · tests 3/4 passed")
+        self.assertTrue(gfg.made_worse(r("failed", "install ok · build ok · tests 0/4 passed"), base))
+        self.assertTrue(gfg.made_worse(r("failed", "install ok · build failed (exit 1)"), base))
+        self.assertFalse(gfg.made_worse(r("failed", "install ok · build ok · tests 3/4 passed"), base))  # same
+        self.assertFalse(gfg.made_worse(r("passed", "install ok · build ok · tests 4/4 passed"), base))
+        self.assertFalse(gfg.made_worse(r("failed", "install ok · build ok · tests 1/4 passed"),
+                                        r("failed", "install ok · build failed (exit 1)")))  # build fixed
+
+
 class FixLoopCliTest(TempRoot):
     def test_main_fix_loop_end_to_end(self):
         """idea -> ... -> apply_changes -> test (fails) -> fixer -> apply_fix -> test (passes)."""
@@ -326,10 +432,10 @@ class FixLoopCliTest(TempRoot):
 
         fixed = reply(("src/main.ts", "update", MAIN_V2 + "export const fixed = true;\n"))
         with mock.patch.object(test_runner, "run_project_checks", checks):
-            code, out = run_main(["--fix-loop"], FakeLLM(*ALL_REPLIES, fixed, APPROVE), root=self.root)
+            code, out = run_main(["--fix-loop"], FakeLLM(*ALL_REPLIES, fixed, NO_FEEDBACK), root=self.root)
         self.assertEqual(code, 0, out)
         for needle in ["=== FIX LOOP ===", "#1  apply_fix applied", "tests passed after 1 fix attempt(s)",
-                       "=== REVIEW ===", "verdict: approve", "=== HUMAN REVIEW ===", "needs_human_review",
+                       "=== REVIEW ===", "verdict: needs_changes", "=== HUMAN REVIEW ===", "needs_human_review",
                        "scripts/decide.py --project-dir generated/block-dodger approve",
                        "files changed outside it: 0"]:
             self.assertIn(needle, out)
@@ -338,7 +444,7 @@ class FixLoopCliTest(TempRoot):
 
     def test_main_fix_loop_exhausted_exit_1(self):
         with mock.patch.object(test_runner, "run_project_checks", FakeChecks("failed")):
-            code, out = run_main(["--fix-loop", "--max-fix-attempts", "0"], FakeLLM(*ALL_REPLIES, NEEDS_CHANGES),
+            code, out = run_main(["--fix-loop", "--max-fix-attempts", "0"], FakeLLM(*ALL_REPLIES, UNVERIFIED),
                                  root=self.root)
         self.assertEqual(code, 1, out)
         self.assertIn("fix attempts exhausted (0/0)", out)

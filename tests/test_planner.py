@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tests"))  # shared helpers (fakes.py) when run as a single module
 
+from agents.nodes.planner import with_quality_bar  # noqa: E402
 from agents.llm import extract_json, parse_model  # noqa: E402
 from agents.nodes.planner import plan_game, planner_node  # noqa: E402
 from agents.schemas import FactoryStatus, GameFactoryState, GameSpec, NodeError  # noqa: E402
@@ -110,7 +111,7 @@ class PlannerNodeTest(unittest.TestCase):
     def test_success_update(self):
         update = planner_node(GameFactoryState(user_idea=BLOCK_DODGER_IDEA), llm=FakeLLM(VALID))
         self.assertEqual(update["status"], FactoryStatus.PLANNED)
-        self.assertEqual(update["game_spec"], sample_game_spec())
+        self.assertEqual(update["game_spec"], with_quality_bar(sample_game_spec()))  # M22: planner adds the quality bar
 
     def test_error_update(self):
         update = planner_node(GameFactoryState(user_idea=BLOCK_DODGER_IDEA), llm=FakeLLM(INVALID, INVALID))
@@ -128,7 +129,7 @@ class PlannerNodeTest(unittest.TestCase):
         graph.add_edge("planner", END)
         out = graph.compile().invoke({"user_idea": BLOCK_DODGER_IDEA})
         self.assertEqual(out["status"], FactoryStatus.PLANNED)
-        self.assertEqual(out["game_spec"], sample_game_spec())
+        self.assertEqual(out["game_spec"], with_quality_bar(sample_game_spec()))
 
 
 class RunnerTest(unittest.TestCase):

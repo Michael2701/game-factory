@@ -34,19 +34,18 @@ Use exactly the fields of this JSON Schema — no extra fields:
 
 ## Example output
 
-For the "Target Tapper" GameSpec (click 15 pop-up targets within 30 seconds), starting from the Phaser + Vite template:
+For the "Pair Finder" GameSpec (a memory game: flip cards to find 6 pairs within 20 moves), starting from the Phaser + Vite template — a DIFFERENT game than yours, plan the tasks YOUR GameSpec needs:
 
 ```json
 {
-  "game_slug": "target-tapper",
+  "game_slug": "pair-finder",
   "tasks": [
-    {"id": "T1", "title": "Start scene", "description": "Update StartScene: title 'Target Tapper' and 'Click to start'; a click starts GameScene.", "kind": "code", "target_files": ["src/scenes/StartScene.ts"], "depends_on": [], "acceptance": "Clicking the start screen opens GameScene."},
-    {"id": "T2", "title": "Game scene", "description": "Update GameScene: random targets, hit counter, 30 s timer; 15 hits win, timeout loses; skipTime(seconds) advances the timer.", "kind": "code", "target_files": ["src/scenes/GameScene.ts"], "depends_on": ["T1"], "acceptance": "Clicking targets increases hits; the game ends after 30 seconds."},
-    {"id": "T3", "title": "Game over scene", "description": "Create GameOverScene with the win/lose message and a restart click; register it in src/main.ts.", "kind": "code", "target_files": ["src/scenes/GameOverScene.ts"], "depends_on": ["T2"], "acceptance": "After win or lose the message shows and a click restarts."},
-    {"id": "T4", "title": "Test hooks", "description": "Update src/testHooks.ts: window.__GAME_STATE__ (scene, hits, timeLeft, result) and window.__TEST_API__ (startGame, spawnTargetAt, setHits, skipTime).", "kind": "test_hooks", "target_files": ["src/testHooks.ts"], "depends_on": ["T3"], "acceptance": "Both hooks exist on window after the game starts."},
-    {"id": "T5", "title": "Playwright tests", "description": "Replace the template tests: start, hitting a target, winning and losing via hooks.", "kind": "tests", "target_files": ["tests/game.spec.ts"], "depends_on": ["T4"], "acceptance": "Tests compile."},
-    {"id": "T6", "title": "Build", "description": "Run npm run build.", "kind": "build", "target_files": [], "depends_on": ["T4"], "acceptance": "npm run build exits with code 0."},
-    {"id": "T7", "title": "Run tests", "description": "Run npx playwright test.", "kind": "run_tests", "target_files": [], "depends_on": ["T5", "T6"], "acceptance": "All Playwright tests pass."}
+    {"id": "T1", "title": "Game scene", "description": "Update GameScene: a 4x3 grid of face-down cards, flip two per move on click, matching pairs stay open, a move counter in the HUD; 6 pairs win, the 21st move loses; clickTarget points at a face-down card.", "kind": "code", "target_files": ["src/scenes/GameScene.ts"], "depends_on": [], "acceptance": "Clicking a card flips it; the move counter updates; finding all pairs wins."},
+    {"id": "T2", "title": "Result screen", "description": "Update GameOverScene: also show the number of moves.", "kind": "code", "target_files": ["src/scenes/GameOverScene.ts"], "depends_on": ["T1"], "acceptance": "The result screen shows win/lose and the moves; a click restarts."},
+    {"id": "T3", "title": "Test hooks", "description": "Update src/testHooks.ts: keep the template hooks, add pairsFound and moves to window.__GAME_STATE__ and flipPair(match) to window.__TEST_API__.", "kind": "test_hooks", "target_files": ["src/testHooks.ts"], "depends_on": ["T1"], "acceptance": "The hooks exist on window after the game starts."},
+    {"id": "T4", "title": "Playwright tests", "description": "Replace the template tests: start, flipping a card, winning and losing via hooks.", "kind": "tests", "target_files": ["tests/game.spec.ts"], "depends_on": ["T3"], "acceptance": "Tests compile."},
+    {"id": "T5", "title": "Build", "description": "Run npm run build.", "kind": "build", "target_files": [], "depends_on": ["T3"], "acceptance": "npm run build exits with code 0."},
+    {"id": "T6", "title": "Run tests", "description": "Run npx playwright test.", "kind": "run_tests", "target_files": [], "depends_on": ["T4", "T5"], "acceptance": "All Playwright tests pass."}
   ]
 }
 ```

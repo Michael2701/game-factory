@@ -46,7 +46,7 @@ class ClickToStartTest(unittest.TestCase):
         def errors(start: str) -> list[str]:
             return check_changes(change_set(("src/scenes/StartScene.ts", "update", start),
                                             ("src/scenes/GameScene.ts", "update", "x\n"),
-                                            ("src/scenes/GameOverScene.ts", "create", "x\n")), task, base)
+                                            ("src/scenes/GameOverScene.ts", "update", "x\n")), task, base)
         self.assertTrue(any("click anywhere" in e for e in errors("this.input.keyboard!.once('keydown-SPACE', f);\n")))
         self.assertEqual(errors("this.input.once('pointerdown', () => this.scene.start('GameScene'));\n"), [])
 

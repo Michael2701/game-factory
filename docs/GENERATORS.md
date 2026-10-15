@@ -36,14 +36,16 @@ The agents' **output target**: every generated project starts from this template
 | `index.html` | `#app` + `/src/main.ts`; `<title>` filled in per game | **locked** |
 | `tsconfig.json` | strict, ES2022, bundler resolution, noEmit | **locked** |
 | `playwright.config.ts` | chromium headless, `vite preview` on port 41731, timeout 15 s | **locked** |
-| `src/main.ts` | `import * as Phaser`, `Phaser.Game` with Arcade Physics and `[StartScene, GameScene]`, `setupTestHooks(game)` | update (register scenes) |
-| `src/scenes/StartScene.ts` | "Click to start" → GameScene | update |
-| `src/scenes/GameScene.ts` | placeholder with `result` and `skipTime(seconds)` | update |
-| `src/testHooks.ts` | hook contract: `__GAME_STATE__.scene/.result`, `__TEST_API__.startGame()/.skipTime()` | update (test_hooks task) |
+| `src/main.ts` | `import * as Phaser`, `Phaser.Game` 480x640 with Arcade Physics and `[StartScene, GameScene, GameOverScene]`, `setupTestHooks(game)` | update (register scenes) |
+| `src/scenes/StartScene.ts` | title + controls line (from the GameSpec) + "Click to start" → GameScene | update |
+| `src/scenes/GameScene.ts` | placeholder with `result`, `hudText`, `endGame(result)`, `skipTime(seconds)` (genre-neutral) | update |
+| `src/scenes/GameOverScene.ts` | M21c: win/lose message + "Click to play again" → GameScene | update if needed |
+| `src/ui.ts` | PALETTE by role (primary, secondary, danger, good, accent), `title`, `hint`, `hud`, `flash`, `shake` | use |
+| `src/testHooks.ts` | M21c generic contract: `__GAME_STATE__` scene / result / player / score / difficulty / clickTarget (read from GameScene members) / texts / objects; `__TEST_API__` startGame / skipTime / finishRound | update (test_hooks task: keep, add game values) |
 | `tests/game.spec.ts` | 3 smoke tests of the contract | replaced by the test writer |
 | `tests/fixtures.ts` | M21: `pageerror` + `console.error` fail the test ("Browser errors") | **locked** |
 | `vite.config.ts` | M21: source maps + no minify only with `GAME_FACTORY_DEBUG_BUILD=1` (test runner) | **locked** |
-| `tests/acceptance.spec.ts` | M21: written by `agents/generators/acceptance.py` from the GameSpec at apply time (real click + arrow keys, screenshots) | **locked** |
+| `tests/acceptance.spec.ts` | written by `agents/generators/acceptance.py` at apply time from the GameSpec **playtest** (M21c): only the steps this game needs, real clicks / key presses, screenshots | **locked** |
 | `README.md` | template docs | not copied |
 
 API (`agents/generators/phaser_template.py`):

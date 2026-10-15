@@ -1,4 +1,5 @@
 import * as Phaser from 'phaser';
+import { hint, title } from '../ui';
 
 export class StartScene extends Phaser.Scene {
   constructor() {
@@ -6,7 +7,9 @@ export class StartScene extends Phaser.Scene {
   }
 
   create() {
-    this.add.text(240, 320, 'Click to start', { color: '#ffffff', fontSize: '28px' }).setOrigin(0.5);
+    title(this, '__GAME_TITLE__');
+    hint(this, '__CONTROLS_HINT__');
+    hint(this, 'Click to start', 380);
     this.input.once('pointerdown', () => this.scene.start('GameScene'));
   }
 }

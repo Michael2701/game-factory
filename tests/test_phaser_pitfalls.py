@@ -62,7 +62,7 @@ class PhaserProblemsTest(unittest.TestCase):
                        reason="r"),
             FileChange(path="src/scenes/GameScene.ts", operation="update",
                        content="this.input.on('keydown_LEFT', f);\n", reason="r"),
-            FileChange(path="src/scenes/GameOverScene.ts", operation="create", content="x\n", reason="r")])
+            FileChange(path="src/scenes/GameOverScene.ts", operation="update", content="x\n", reason="r")])
         errors = check_changes(changes, task, base)
         self.assertEqual(len(errors), 1, errors)
         self.assertIn("never fire in Phaser 3.90", errors[0])
@@ -106,7 +106,7 @@ class BootAndTemplateTest(unittest.TestCase):
 
     def test_template_scene_getter_and_game_scene(self):
         files = instantiate("x", "X")
-        self.assertIn("active[active.length - 1]?.scene.key", files["src/testHooks.ts"])
+        self.assertIn("scenes[scenes.length - 1]?.scene.key", files["src/testHooks.ts"])
         self.assertNotIn("this.add.text", files["src/scenes/GameScene.ts"])  # no visible placeholder
         self.assertIn("endGame(result: 'win' | 'lose')", files["src/scenes/GameScene.ts"])
 

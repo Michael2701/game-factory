@@ -42,6 +42,15 @@ def sample_game_spec() -> GameSpec:
         ],
         "asset_requirements": ["player rectangle", "block rectangle"],
         "sound_requirements": [],
+        "playtest": {
+            "player": {"moves_by_itself": False},
+            "inputs": [{"input": "ArrowLeft", "expect": "player_left"},
+                       {"input": "ArrowRight", "expect": "player_right"}],
+            "moves_on_its_own": True,
+            "hud": "time",
+            "difficulty_ramps": True,
+            "round_end": {"by": "timer", "seconds": 60},
+        },
     })
 
 

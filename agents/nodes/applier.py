@@ -18,7 +18,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from agents.generators.acceptance import ACCEPTANCE_FILE, acceptance_spec
-from agents.generators.phaser_template import project_base
+from agents.generators.phaser_template import spec_base
 from agents.nodes.coder import merge_changes
 from agents.schemas import FactoryStatus, FileChange, GameFactoryState, NodeError
 from agents.tools.apply_changes import apply_changes
@@ -66,7 +66,7 @@ def write_manifest(target: str, by: str, root: Path = PROJECT_ROOT) -> None:
 
 def final_changes(state: GameFactoryState) -> list[FileChange]:
     """Merge the project base (template, M19), then all proposals (code, then tests) into one `create` per file."""
-    base = project_base(state.template, state.game_spec.slug, state.game_spec.title) if state.game_spec else {}
+    base = spec_base(state.template, state.game_spec) if state.game_spec else {}
     files = merge_changes(base, [*state.proposed_changes, *state.proposed_test_changes])
     if state.template and state.game_spec:  # M21: locked, written by code from the GameSpec, never by the LLM
         files[ACCEPTANCE_FILE] = acceptance_spec(state.game_spec, import_from="./fixtures")
